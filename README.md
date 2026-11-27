@@ -103,7 +103,7 @@ order with automatic fallback. With no model available a mission is marked `bloc
 
 ## Phase 4: cybersecurity division
 
-Adapters for Nmap, Nuclei, ZAP-style web scanning via Nuclei templates, Semgrep, Trivy and YARA, each running in a
+Adapters for Nmap, Nuclei, Semgrep, Trivy and YARA, each running in a
 pinned container image in the sandbox. Active testing is refused unless the target is inside an engagement's
 allowlist, not excluded, inside its time window, with an authorized tool and within its request budget. Findings are
 de-duplicated, mapped to OWASP and MITRE ATT&CK, carry evidence and remediation, and are tracked through
@@ -112,7 +112,7 @@ include scope and authorization, methodology, severity summary, evidence, remedi
 hashes. Suricata EVE alerts can be ingested for the defensive view. Verified live: an Nmap scan of a lab container,
 the report, and an approved verification re-test.
 
-Not yet: Burp Suite, OpenVAS, Ghidra, Volatility and Wazuh adapters; PentestGPT-style autonomous exploitation is
+Not yet: ZAP, Burp Suite, OpenVAS, Ghidra, Volatility and Wazuh adapters; PentestGPT-style autonomous exploitation is
 deliberately not included.
 
 ## Phase 5: research
