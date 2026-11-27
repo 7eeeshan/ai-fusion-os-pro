@@ -97,7 +97,7 @@ def test_desktop_backend_end_to_end(tmp_path):
                 time.sleep(0.2)
         tok = httpx.post(base + "/desktop/session", json={"launch": info["launch"]}).json()["admin_token"]
         st = httpx.get(base + "/admin/status", headers={"Authorization": f"Bearer {tok}"}).json()
-        assert st["sandbox"]["available"]  # Docker or the process fallback
+        assert st["sandbox"]["skills"]["available"]  # Docker or the process fallback
         second = subprocess.run([sys.executable, "-m", "fusion_os", "desktop", "--port", "0"], env=env,
                                 capture_output=True, text=True, timeout=60)
         assert second.returncode == 3 and json.loads(second.stdout)["port"] == port

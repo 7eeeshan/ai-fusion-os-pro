@@ -804,9 +804,9 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     def status():
         sk = skm.sandbox
         return {**ctl.status(),
-                "sandbox": {**dict(zip(("available", "detail"), sk.available())),
-                            "isolation": getattr(sk, "isolation", "docker"),
-                            "raw_exec": dict(zip(("available", "detail"), sbx.available()))},
+                "sandbox": {**dict(zip(("available", "detail"), sbx.available())),
+                            "skills": {**dict(zip(("available", "detail"), sk.available())),
+                                       "isolation": getattr(sk, "isolation", "docker")}},
                 "engine_link": eng.status()}
 
     @app.get("/admin/approvals", dependencies=[Depends(admin)])

@@ -139,7 +139,7 @@ def test_skill_lifecycle_without_docker(tmp_path):
     out = c.post("/v1/skills/text-stats/run", json={"inputs": {"text": "Red fox. Red dog.", "top": 1}}, headers=ag).json()
     assert out["result"]["output"]["top_terms"] == [["red", 2]]
     st = c.get("/admin/status", headers=adm).json()["sandbox"]
-    assert st["available"] and st["isolation"] == "process" and not st["raw_exec"]["available"]
+    assert not st["available"] and st["skills"]["available"] and st["skills"]["isolation"] == "process"
 
 
 @pytest.mark.parametrize("code", [
