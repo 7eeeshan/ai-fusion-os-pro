@@ -29,3 +29,6 @@ fusion_os = ["security/default_policy.json", "api/dashboard.html", "research/oni
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.vercel]
+entrypoint = "vercel_app:app"

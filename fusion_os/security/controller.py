@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
 from dataclasses import asdict, dataclass
@@ -53,7 +54,13 @@ class SecurityController:
         self.budgets = Budgets(self.store)
         self._stop_file = self.dir / "EMERGENCY_STOP"
         self._admin_file = self.dir / "admin_token"
-        if not self._admin_file.exists():
+        env_token = os.environ.get("FUSION_OS_ADMIN_TOKEN", "").strip()
+        if env_token:
+            # Hosts with no persistent disk (e.g. serverless) supply a fixed admin token instead of a generated one.
+            if len(env_token) < 32:
+                raise ValueError("FUSION_OS_ADMIN_TOKEN must be at least 32 characters")
+            paths.write_private(self._admin_file, env_token)
+        elif not self._admin_file.exists():
             paths.write_private(self._admin_file, "fos_admin_" + secrets.token_urlsafe(32))
         if self.policy.upgraded_from:
             self.audit.append("system", "policy.default_upgrade", {"from": self.policy.upgraded_from, "to": self.policy.current_hash()})
