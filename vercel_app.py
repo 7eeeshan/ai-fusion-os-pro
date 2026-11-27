@@ -13,7 +13,7 @@ os.environ.setdefault("FUSION_OS_WORKER", "0")
 os.environ.setdefault("FUSION_OS_SCHEDULER", "0")
 Path(os.environ["FUSION_OS_WORKSPACE"]).mkdir(parents=True, exist_ok=True)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fusion_os.api.server import create_app  # noqa: E402
 

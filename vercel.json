@@ -1,15 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/index.py": {
-      "includeFiles": "fusion_os/**",
+    "vercel_app.py": {
       "maxDuration": 60
     }
-  },
-  "redirects": [
-    { "source": "/", "destination": "/dashboard", "permanent": false }
-  ],
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
-  ]
+  }
 }
