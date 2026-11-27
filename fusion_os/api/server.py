@@ -24,6 +24,12 @@ from ..research import FetchBlocked, SurfaceWeb, TorResearch
 from ..research.common import EvidenceStore
 from ..research.tor import TorUnavailable
 from ..secops import SecOpsService
+from ..config_store import ConfigStore
+from ..intel import TechIntelAgent, TechRegistry
+from ..llm import AnthropicLLM, EngineLLM
+from ..models import ModelManager
+from ..models.bench import BUILTIN_SUITES, BenchmarkSuite
+from ..ops import BackupManager, HealthMonitor, ImprovementLab
 from ..skills import SkillManager
 from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
 from ..sandbox.docker import SandboxError
@@ -149,6 +155,40 @@ class PortalBody(BaseModel):
     approval_id: Optional[str] = None
 
 
+class TechStatusBody(BaseModel):
+    status: str
+
+
+class ScoresBody(BaseModel):
+    scores: dict[str, Optional[float]]
+    notes: str = ""
+
+
+class BenchBody(BaseModel):
+    provider: str
+    model: str
+    suite: str = "general-v1"
+    cases: Optional[list[dict]] = None
+
+
+class DeployBody(BaseModel):
+    role: str = "default"
+    provider: str
+    model: str
+    approval_id: Optional[str] = None
+
+
+class ProposalBody(BaseModel):
+    kind: str
+    key: str
+    value: Any
+    rationale: str
+
+
+class ApplyBody(BaseModel):
+    approval_id: Optional[str] = None
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -168,6 +208,34 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     mis = missions or MissionRunner(ctl, mem, Router(), paths.home() / "missions.db", skills=skm)
     sec = secops or SecOpsService(ctl, paths.home() / "secops.db", paths.home() / "analysis")
     wb = web or SurfaceWeb(ctl, EvidenceStore(paths.home() / "evidence.db"), translator=Router())
+    cfg = ConfigStore(paths.home() / "config.db")
+    reg = TechRegistry(paths.home() / "tech.db")
+    intel_box: dict = {}
+
+    def intel() -> TechIntelAgent:
+        if "a" not in intel_box:
+            intel_box["a"] = TechIntelAgent(ctl, reg)
+        return intel_box["a"]
+
+    def _provider(name: str):
+        if name == "engine":
+            return lambda model, system, prompt: EngineLLM(eng, model).complete(system, prompt, 800)
+        if name == "anthropic":
+            return lambda model, system, prompt: AnthropicLLM(model=model).complete(system, prompt, 800)
+        raise KeyError(name)
+
+    mm = ModelManager(ctl, cfg, paths.home() / "bench.db", {"engine": _provider("engine"), "anthropic": _provider("anthropic")})
+    ops_token = ctl.register_agent("ops-console", ["standard"])
+    ops_agent = ctl.agent_for_token(ops_token)
+
+    def _evaluate(key: str, value: Any) -> float:
+        """Score a prompt setting on the general benchmark with the deployed (or first available) model."""
+        dep = mm.deployed() or {"provider": "engine", "model": ""}
+        suite = BUILTIN_SUITES["general-v1"]
+        if key.startswith("prompt.") and isinstance(value, str):
+            suite = BenchmarkSuite(suite.name, suite.cases, system=value)
+        return mm.run(suite, dep["provider"], dep["model"])["accuracy"]
+
     # Dark-web evidence lives in its own database, apart from memory and surface research.
     tr = tor or TorResearch(ctl, EvidenceStore(paths.home() / "darkweb_evidence.db"), paths.home() / "tor", translator=Router())
     app = FastAPI(title="AI Fusion OS Pro", version="0.1.0")
@@ -328,6 +396,118 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
             raise HTTPException(409, str(exc))
         except SandboxUnavailable as exc:
             raise HTTPException(503, str(exc))
+
+    health = HealthMonitor(ctl, memory=mem, missions=mis, sandbox=sbx, engine=eng, data_dir=paths.home())
+    backups = BackupManager(paths.home(), ctl)
+    lab = ImprovementLab(ctl, cfg, paths.home() / "proposals.db", _evaluate, post_check=lambda: health.check()["ok"])
+    mis.cfg = cfg
+
+    # ----- technology intelligence -----
+    @app.get("/admin/intel", dependencies=[Depends(admin)])
+    def intel_list(status: Optional[str] = None, kind: Optional[str] = None):
+        return reg.list(status, kind)
+
+    @app.post("/admin/intel/scan", dependencies=[Depends(admin)])
+    def intel_scan(watchlist: Optional[dict] = None):
+        return intel().scan(watchlist or cfg.get("intel.watchlist"))
+
+    @app.put("/admin/intel/{tid}/status", dependencies=[Depends(admin)])
+    def intel_status(tid: str, body: TechStatusBody):
+        try:
+            ok = reg.set_status(tid, body.status)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        ctl.audit.append("admin", "intel.status", {"id": tid, "status": body.status})
+        return {"ok": ok}
+
+    @app.put("/admin/intel/{tid}/scores", dependencies=[Depends(admin)])
+    def intel_scores(tid: str, body: ScoresBody):
+        reg.set_scores(tid, body.scores, body.notes)
+        return {"ok": True}
+
+    # ----- models -----
+    @app.get("/admin/models", dependencies=[Depends(admin)])
+    def models_overview():
+        import os
+        return {"deployed": mm.deployed(), "history": cfg.history("model.default"),
+                "discovered": mm.discover(eng, os.environ.get("ANTHROPIC_API_KEY"), httpx.Client(timeout=15)),
+                "results": mm.results(), "suites": list(BUILTIN_SUITES)}
+
+    @app.post("/admin/models/benchmark", dependencies=[Depends(admin)])
+    def models_bench(body: BenchBody):
+        suite = BenchmarkSuite("custom", body.cases) if body.cases else BUILTIN_SUITES.get(body.suite)
+        if suite is None:
+            raise HTTPException(404, "unknown suite")
+        try:
+            return mm.run(suite, body.provider, body.model)
+        except KeyError:
+            raise HTTPException(400, "provider must be engine or anthropic")
+
+    @app.post("/admin/models/compare", dependencies=[Depends(admin)])
+    def models_compare(body: BenchBody):
+        return mm.compare(BUILTIN_SUITES.get(body.suite, BUILTIN_SUITES["general-v1"]), {"provider": body.provider, "model": body.model})
+
+    @app.post("/admin/models/deploy", dependencies=[Depends(admin)])
+    def models_deploy(body: DeployBody):
+        return mm.deploy(ops_agent, body.role, body.provider, body.model, body.approval_id)
+
+    @app.post("/admin/models/rollback", dependencies=[Depends(admin)])
+    def models_rollback(role: str = "default"):
+        return {"deployed": mm.rollback(role)}
+
+    # ----- health, recovery, improvement -----
+    @app.get("/admin/health", dependencies=[Depends(admin)])
+    def health_check():
+        return health.diagnose() | {"history": health.history[-100:]}
+
+    @app.post("/admin/health/heal", dependencies=[Depends(admin)])
+    def health_heal():
+        return {"actions": health.heal()}
+
+    @app.get("/admin/backups", dependencies=[Depends(admin)])
+    def backups_list():
+        return backups.list()
+
+    @app.post("/admin/backups", dependencies=[Depends(admin)])
+    def backups_create(label: str = "manual"):
+        return {"name": backups.create(label)}
+
+    @app.post("/admin/backups/{name}/restore", dependencies=[Depends(admin)])
+    def backups_restore(name: str):
+        try:
+            return backups.restore(name)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/admin/improvements", dependencies=[Depends(admin)])
+    def improvements():
+        return lab.list()
+
+    @app.post("/v1/improvements")
+    def improvements_propose(body: ProposalBody, a: dict = Depends(agent)):
+        try:
+            return {"id": lab.propose(body.kind, body.key, body.value, body.rationale, a["agent_id"])}
+        except (ValueError, PermissionError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/admin/improvements/{pid}/validate", dependencies=[Depends(admin)])
+    def improvements_validate(pid: str):
+        return lab.validate(pid)
+
+    @app.post("/admin/improvements/{pid}/apply", dependencies=[Depends(admin)])
+    def improvements_apply(pid: str, body: ApplyBody):
+        try:
+            return lab.apply(pid, ops_agent, body.approval_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.get("/admin/config", dependencies=[Depends(admin)])
+    def config_all():
+        return {k: cfg.history(k)[:5] for k in cfg.keys()}
+
+    @app.post("/admin/config/{key}/rollback", dependencies=[Depends(admin)])
+    def config_rollback(key: str):
+        return {"value": cfg.rollback(key, "admin")}
 
     # ----- research -----
     def _research(fn, *args, **kw):

@@ -145,10 +145,19 @@ class PolicyEngine:
         except OSError:
             return None
 
+    def verify(self) -> bool:
+        """Re-check the pinned hash; on mismatch the engine fails closed."""
+        try:
+            pinned = self.lock_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            pinned = ""
+        if self.doc is not None and self.current_hash() != pinned:
+            self.reload()
+        return self.doc is not None
+
     def evaluate(self, req: ActionRequest) -> Decision:
         # Detect tampering on every decision, not only at start-up.
-        if self.doc is not None and self.current_hash() != self.lock_file.read_text(encoding="utf-8").strip():
-            self.reload()
+        self.verify()
         if self.doc is None:
             return Decision("deny", "integrity", f"policy integrity failure, failing closed: {self.integrity_error}")
         for rule in IMMUTABLE_RULES:

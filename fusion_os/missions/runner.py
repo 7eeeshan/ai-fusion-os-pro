@@ -75,8 +75,8 @@ CREATE TABLE IF NOT EXISTS missions (
 
 class MissionRunner:
     def __init__(self, ctl: SecurityController, memory: MemoryStore, llm: Any, db_path: Path,
-                 skills: Any = None, limits: Optional[MissionLimits] = None):
-        self.ctl, self.mem, self.llm, self.skills = ctl, memory, llm, skills
+                 skills: Any = None, limits: Optional[MissionLimits] = None, config: Any = None):
+        self.ctl, self.mem, self.llm, self.skills, self.cfg = ctl, memory, llm, skills, config
         self.limits = limits or MissionLimits()
         self.tools: dict[str, Tool] = {}
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False, isolation_level=None)
@@ -161,7 +161,8 @@ class MissionRunner:
                                              mission_id=mid, params={"purpose": system_key}), agent)
         if not v.allowed:
             raise RuntimeError(f"{role} model call denied: {v.reason}")
-        return self.llm.complete(SYSTEM[system_key], prompt)
+        system = self.cfg.get(f"prompt.{system_key}", SYSTEM[system_key]) if self.cfg is not None else SYSTEM[system_key]
+        return self.llm.complete(system, prompt)
 
     # ---------- public ----------
     def start(self, goal: str, requested_by: str = "admin", background: bool = True) -> str:
