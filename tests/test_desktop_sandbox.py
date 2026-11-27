@@ -131,7 +131,7 @@ def test_skill_lifecycle_without_docker(tmp_path):
     ag = {"Authorization": f"Bearer {tok}"}
     files = {p.name: p.read_text() for p in EX.iterdir() if p.is_file()}
     rep = c.post("/v1/skills/submit", json={"files": files}, headers=ag).json()
-    assert rep["passed"], rep
+    assert rep["passed"], {k: v for k, v in rep["checks"].items() if not v["ok"]}
     v = c.post("/v1/skills/text-stats/1.0.0/register", json={}, headers=ag).json()
     assert v["effect"] == "pending_approval"  # human approval still required
     c.post(f"/admin/approvals/{v['approval_id']}", json={"approve": True}, headers=adm)
