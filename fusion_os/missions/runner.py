@@ -89,6 +89,18 @@ class MissionRunner:
         self._agents: dict[str, dict] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._register_builtin_tools()
+        self._mark_interrupted()
+
+    def _mark_interrupted(self) -> None:
+        """Missions that were mid-run when the server last stopped can't continue: mark them so they don't show as
+        running forever. Missions waiting on an approval are left alone; they resume when it arrives."""
+        with self.lock:
+            rows = self.conn.execute("SELECT id FROM missions WHERE status IN ('planning','running','stopping')").fetchall()
+            for r in rows:
+                self.conn.execute("UPDATE missions SET status='interrupted', error=?, updated=? WHERE id=?",
+                                  ("server restarted while the mission was running", time.time(), r["id"]))
+        for r in rows:
+            self.ctl.audit.append("mission-runner", "mission.interrupted", {"mission_id": r["id"]})
 
     # ---------- tools ----------
     def register_tool(self, tool: Tool) -> None:
@@ -145,7 +157,16 @@ class MissionRunner:
         return out
 
     def _worker_prompt(self, inputs: dict, ctx: dict) -> str:
-        prior = "\n".join(f"- step {k}: {str(v)[:1500]}" for k, v in ctx.get("results", {}).items())
+        # Each earlier result gets up to 6,000 chars and all of them 8,000 in total: enough to summarise a whole
+        # README while still fitting a 4k-token local model context.
+        prior, budget = [], 8000
+        for k, v in ctx.get("results", {}).items():
+            text = str(v)[:min(6000, budget)]
+            budget -= len(text)
+            prior.append(f"- step {k}: {text}")
+            if budget <= 0:
+                break
+        prior = "\n".join(prior)
         return f"Mission goal: {ctx['goal']}\nYour role: {ctx['role']}\nEarlier results:\n{prior or '(none)'}\n\nTask: {inputs.get('task', inputs)}"
 
     # ---------- persistence ----------

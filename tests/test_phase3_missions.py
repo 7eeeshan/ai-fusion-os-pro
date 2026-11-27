@@ -238,3 +238,13 @@ def test_writing_step_gets_lenient_check_and_rejected_drafts_are_kept(tmp_path):
     m = r.get(mid)
     assert m["status"] == "failed"
     assert m["result"]["rejected_drafts"]["1"].startswith("- a")
+
+
+def test_missions_cut_off_by_a_restart_are_marked_interrupted(tmp_path):
+    ctl = SecurityController(tmp_path / "s")
+    r = MissionRunner(ctl, MemoryStore(tmp_path / "m.db"), Scripted(lambda s, p, n: "x"), tmp_path / "x.db")
+    r.conn.execute("INSERT INTO missions(id, goal, status, created, updated, requested_by) VALUES ('mis_a','g','running',0,0,'t')")
+    r.conn.execute("INSERT INTO missions(id, goal, status, created, updated, requested_by) VALUES ('mis_b','g','waiting',0,0,'t')")
+    r2 = MissionRunner(ctl, MemoryStore(tmp_path / "m.db"), Scripted(lambda s, p, n: "x"), tmp_path / "x.db")
+    assert r2.get("mis_a")["status"] == "interrupted"
+    assert r2.get("mis_b")["status"] == "waiting"
