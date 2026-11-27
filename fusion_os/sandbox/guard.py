@@ -266,7 +266,7 @@ def main(argv):
     with open(argv[1], encoding="utf-8") as f:
         cfg = json.load(f)
     os.chdir(cfg["work"])
-    sys.path[:] = [cfg["work"]] + [p for p in sys.path if p and os.path.isdir(p) and not p.startswith(cfg["work"])]
+    sys.path[:] = [cfg["work"]] + [p for p in sys.path if p and os.path.exists(p) and not p.startswith(cfg["work"])]  # keep zipped stdlib (embeddable Python)
     import runpy  # noqa: needed before the hook so the runner itself is loaded from the install
     import unittest  # noqa: preload: the hook lists directories, and test discovery needs this from the install
     # Preload stdlib modules that import blocked native helpers internally (shutil and argparse use _winapi on
