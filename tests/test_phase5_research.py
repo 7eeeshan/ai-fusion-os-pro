@@ -181,3 +181,41 @@ def test_internal_network_has_no_internet():
         assert r.stdout.strip() == "ISOLATED"
     finally:
         subprocess.run(["docker", "network", "rm", net], capture_output=True)
+
+
+def test_native_tor_mode_fetches_through_socks_only(env, tmp_path):
+    """Desktop mode without Docker: the fetcher runs in the process sandbox and may only reach the SOCKS port."""
+    from fusion_os.research.tor import NativeTor
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(b"<title>Board</title><p>forum thread posted by members</p>")
+        def log_message(self, *a):
+            pass
+    http = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=http.serve_forever, daemon=True).start()
+    sx = _Socks(http.server_address[1])
+    sx.start()
+    ctl, r, d, ev = env
+
+    class FakeTor(NativeTor):  # stands in for a bootstrapped tor.exe
+        def running(self):
+            return True
+    nt = FakeTor("tor", tmp_path / "tor", socks_port=sx.port)
+    nt.bootstrap = 100
+    t = TorResearch(ctl, ev, tmp_path / "torwork", mode="native", native=nt)
+    assert t.status()["gateway_running"] and t.status()["mode"] == "native"
+    out = t.fetch(d, "http://exampleonionaddressxyz.onion/t")
+    assert out.get("title") == "Board" and "forum thread" in out["content"], out
+    assert sx.seen == ["exampleonionaddressxyz.onion"]
+    with pytest.raises(PermissionError):
+        t.fetch(r, "http://exampleonionaddressxyz.onion/t")  # still only the dark-web identity
+
+
+def test_native_tor_torrc_is_client_only(tmp_path):
+    from fusion_os.research.tor import NativeTor
+    rc = NativeTor("tor", tmp_path, socks_port=9555).torrc()
+    assert "SocksPort 127.0.0.1:9555" in rc and "ClientOnly 1" in rc and "ControlPort 0" in rc and "SafeSocks 1" in rc

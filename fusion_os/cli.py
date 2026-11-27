@@ -1,4 +1,4 @@
-"""Command line: `fusion-os serve | status | admin-token | add-agent | approvals | approve | deny | stop | resume | verify-audit`."""
+"""Command line: `fusion-os serve | desktop | status | admin-token | add-agent | approvals | approve | deny | stop | resume | verify-audit`."""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +14,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("serve")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8790)
+    dk = sub.add_parser("desktop", help="run the backend for the desktop app (loopback only, single instance)")
+    dk.add_argument("--port", type=int, default=8790)
+    dk.add_argument("--open", action="store_true", help="open the dashboard in the default browser")
     sub.add_parser("status")
     sub.add_parser("admin-token")
     a = sub.add_parser("add-agent")
@@ -42,6 +45,9 @@ def main(argv: list[str] | None = None) -> int:
             print("warning: binding to a non-loopback address exposes the API to your network", file=sys.stderr)
         uvicorn.run(create_app(), host=args.host, port=args.port)
         return 0
+    if args.cmd == "desktop":
+        from . import desktop
+        return desktop.run(args.port, args.open)
     if args.cmd == "worker":
         from .cloud.worker import RemoteQueue, Worker
         from .llm import EngineLLM

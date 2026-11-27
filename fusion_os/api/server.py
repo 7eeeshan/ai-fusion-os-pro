@@ -212,6 +212,10 @@ class ScheduleBody(BaseModel):
     requires: list[str] = Field(default_factory=list)
 
 
+class LaunchBody(BaseModel):
+    launch: str
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -222,7 +226,7 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
                engine: Optional[EngineLink] = None, memory: Optional[MemoryStore] = None,
                skills: Optional[SkillManager] = None, missions: Optional[MissionRunner] = None,
                secops: Optional[SecOpsService] = None, web: Optional[SurfaceWeb] = None,
-               tor: Optional[TorResearch] = None) -> FastAPI:
+               tor: Optional[TorResearch] = None, desktop: Any = None) -> FastAPI:
     ctl = controller or SecurityController()
     sbx = sandbox or make_sandbox(generic=True)
     eng = engine or EngineLink()
@@ -293,6 +297,25 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         return HTMLResponse(html, headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; "
                                            "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
                                            "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
+
+    if desktop is not None:
+        # Desktop app only: the shell proves it can read this Windows user's private data folder by presenting the
+        # per-start launch secret, and gets a dashboard session without anyone pasting the admin token.
+        @app.post("/desktop/session", include_in_schema=False)
+        def desktop_session(body: LaunchBody):
+            if not desktop.check(body.launch):
+                ctl.audit.append("desktop", "desktop.session_denied", {})
+                raise HTTPException(403, "invalid launch secret")
+            ctl.audit.append("desktop", "desktop.session", {})
+            return {"admin_token": ctl.admin_token()}
+
+        @app.post("/desktop/shutdown", include_in_schema=False)
+        def desktop_shutdown(body: LaunchBody):
+            if not desktop.check(body.launch):
+                raise HTTPException(403, "invalid launch secret")
+            ctl.audit.append("desktop", "desktop.shutdown", {})
+            desktop.request_stop()
+            return {"ok": True}
 
     @app.get("/health")
     def health():

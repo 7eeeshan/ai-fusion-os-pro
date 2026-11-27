@@ -96,3 +96,16 @@ def terminate(job) -> None:
 
 def close(job) -> None:
     _k32().CloseHandle(job)
+
+
+def kill_with_parent(popen):
+    """Put an already running helper (e.g. tor.exe) in a job that dies when this process exits. Returns the job;
+    keep a reference to it for as long as the helper should live."""
+    k = _k32()
+    job = k.CreateJobObjectW(None, None)
+    _check(job)
+    info = _EXTENDED_LIMIT()
+    info.BasicLimitInformation.LimitFlags = _LIMIT_KILL_ON_JOB_CLOSE | _LIMIT_DIE_ON_UNHANDLED_EXCEPTION
+    _check(k.SetInformationJobObject(job, _JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)))
+    _check(k.AssignProcessToJobObject(job, wintypes.HANDLE(int(popen._handle))))
+    return job
