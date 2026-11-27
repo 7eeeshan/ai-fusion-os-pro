@@ -11,7 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .. import paths
@@ -19,6 +19,7 @@ from ..engine_link import EngineLink
 from ..llm import Router
 from ..memory import MemoryStore
 from ..missions import MissionRunner
+from ..secops import SecOpsService
 from ..skills import SkillManager
 from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
 from ..sandbox.docker import SandboxError
@@ -115,6 +116,23 @@ class MissionBody(BaseModel):
     goal: str = Field(min_length=3, max_length=4000)
 
 
+class ToolRunBody(BaseModel):
+    tool: str
+    target: str = ""
+    engagement_id: Optional[str] = None
+    folder: Optional[str] = None
+    options: dict[str, Any] = Field(default_factory=dict)
+    approval_id: Optional[str] = None
+
+
+class VerifyBody(BaseModel):
+    approval_id: Optional[str] = None
+
+
+class StatusBody(BaseModel):
+    status: str
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -123,18 +141,21 @@ class ScanBody(BaseModel):
 
 def create_app(controller: Optional[SecurityController] = None, sandbox: Optional[DockerSandbox] = None,
                engine: Optional[EngineLink] = None, memory: Optional[MemoryStore] = None,
-               skills: Optional[SkillManager] = None, missions: Optional[MissionRunner] = None) -> FastAPI:
+               skills: Optional[SkillManager] = None, missions: Optional[MissionRunner] = None,
+               secops: Optional[SecOpsService] = None) -> FastAPI:
     ctl = controller or SecurityController()
     sbx = sandbox or DockerSandbox()
     eng = engine or EngineLink()
     mem = memory or MemoryStore(paths.home() / "memory.db")
     skm = skills or SkillManager(ctl, paths.home() / "skills")
     mis = missions or MissionRunner(ctl, mem, Router(), paths.home() / "missions.db", skills=skm)
+    sec = secops or SecOpsService(ctl, paths.home() / "secops.db", paths.home() / "analysis")
     app = FastAPI(title="AI Fusion OS Pro", version="0.1.0")
     app.state.controller = ctl
     app.state.missions = mis
     app.state.memory = mem
     app.state.skills = skm
+    app.state.secops = sec
 
     def admin(authorization: Optional[str] = Header(None)) -> str:
         if not ctl.is_admin(_bearer(authorization)):
@@ -287,6 +308,61 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
             raise HTTPException(409, str(exc))
         except SandboxUnavailable as exc:
             raise HTTPException(503, str(exc))
+
+    # ----- security operations -----
+    @app.get("/v1/secops/tools")
+    def secops_tools(_: dict = Depends(agent)):
+        return sec.tools()
+
+    @app.post("/v1/secops/run")
+    def secops_run(body: ToolRunBody, a: dict = Depends(agent)):
+        try:
+            return sec.run_tool(a, body.tool, target=body.target, engagement_id=body.engagement_id, folder=body.folder,
+                                options=body.options, approval_id=body.approval_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except SandboxUnavailable as exc:
+            raise HTTPException(503, str(exc))
+
+    @app.post("/v1/secops/findings/{fid}/verify")
+    def secops_verify(fid: str, body: VerifyBody, a: dict = Depends(agent)):
+        try:
+            return sec.verify_finding(a, fid, body.approval_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc))
+        except SandboxUnavailable as exc:
+            raise HTTPException(503, str(exc))
+
+    @app.get("/admin/secops/findings", dependencies=[Depends(admin)])
+    def secops_findings(engagement_id: Optional[str] = None, status: Optional[str] = None):
+        return sec.findings(engagement_id, status)
+
+    @app.put("/admin/secops/findings/{fid}", dependencies=[Depends(admin)])
+    def secops_status(fid: str, body: StatusBody):
+        try:
+            return {"ok": sec.set_status(fid, body.status, "admin")}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/admin/secops/runs", dependencies=[Depends(admin)])
+    def secops_runs(engagement_id: Optional[str] = None):
+        return sec.runs(engagement_id)
+
+    @app.get("/admin/secops/report/{engagement_id}", dependencies=[Depends(admin)])
+    def secops_report(engagement_id: str):
+        from fastapi.responses import PlainTextResponse
+        try:
+            return PlainTextResponse(sec.report(engagement_id), media_type="text/markdown")
+        except KeyError as exc:
+            raise HTTPException(404, str(exc))
+
+    @app.post("/admin/secops/alerts/suricata", dependencies=[Depends(admin)])
+    async def secops_suricata(request: Request):
+        return {"ingested": sec.ingest_suricata((await request.body()).decode("utf-8", "replace"))}
+
+    @app.get("/admin/secops/alerts", dependencies=[Depends(admin)])
+    def secops_alerts():
+        return sec.alerts()
 
     # ----- admin-facing -----
     @app.get("/admin/memory", dependencies=[Depends(admin)])
