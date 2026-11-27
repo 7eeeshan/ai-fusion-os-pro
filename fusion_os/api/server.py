@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,9 @@ from ..engine_link import EngineLink
 from ..llm import Router
 from ..memory import MemoryStore
 from ..missions import MissionRunner
+from ..research import FetchBlocked, SurfaceWeb, TorResearch
+from ..research.common import EvidenceStore
+from ..research.tor import TorUnavailable
 from ..secops import SecOpsService
 from ..skills import SkillManager
 from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
@@ -133,6 +137,18 @@ class StatusBody(BaseModel):
     status: str
 
 
+class FetchBody(BaseModel):
+    url: str
+    zone: str = "research"
+    mission_id: Optional[str] = None
+
+
+class PortalBody(BaseModel):
+    url: str
+    credential: str
+    approval_id: Optional[str] = None
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -142,7 +158,8 @@ class ScanBody(BaseModel):
 def create_app(controller: Optional[SecurityController] = None, sandbox: Optional[DockerSandbox] = None,
                engine: Optional[EngineLink] = None, memory: Optional[MemoryStore] = None,
                skills: Optional[SkillManager] = None, missions: Optional[MissionRunner] = None,
-               secops: Optional[SecOpsService] = None) -> FastAPI:
+               secops: Optional[SecOpsService] = None, web: Optional[SurfaceWeb] = None,
+               tor: Optional[TorResearch] = None) -> FastAPI:
     ctl = controller or SecurityController()
     sbx = sandbox or DockerSandbox()
     eng = engine or EngineLink()
@@ -150,6 +167,9 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     skm = skills or SkillManager(ctl, paths.home() / "skills")
     mis = missions or MissionRunner(ctl, mem, Router(), paths.home() / "missions.db", skills=skm)
     sec = secops or SecOpsService(ctl, paths.home() / "secops.db", paths.home() / "analysis")
+    wb = web or SurfaceWeb(ctl, EvidenceStore(paths.home() / "evidence.db"), translator=Router())
+    # Dark-web evidence lives in its own database, apart from memory and surface research.
+    tr = tor or TorResearch(ctl, EvidenceStore(paths.home() / "darkweb_evidence.db"), paths.home() / "tor", translator=Router())
     app = FastAPI(title="AI Fusion OS Pro", version="0.1.0")
     app.state.controller = ctl
     app.state.missions = mis
@@ -308,6 +328,52 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
             raise HTTPException(409, str(exc))
         except SandboxUnavailable as exc:
             raise HTTPException(503, str(exc))
+
+    # ----- research -----
+    def _research(fn, *args, **kw):
+        try:
+            return fn(*args, **kw)
+        except PermissionError as exc:
+            raise HTTPException(403, exc.args[0] if exc.args else "denied")
+        except (FetchBlocked, ValueError) as exc:
+            raise HTTPException(400, str(exc))
+        except (TorUnavailable, httpx.HTTPError) as exc:
+            raise HTTPException(503, str(exc)[:500])
+
+    @app.post("/v1/research/fetch")
+    def research_fetch(body: FetchBody, a: dict = Depends(agent)):
+        return _research(wb.fetch, a, body.url, body.zone, body.mission_id)
+
+    @app.get("/v1/research/search")
+    def research_search(q: str, zone: str = "research", a: dict = Depends(agent)):
+        return _research(wb.search, a, q, zone)
+
+    @app.get("/v1/research/academic")
+    def research_academic(q: str, zone: str = "research", a: dict = Depends(agent)):
+        return _research(wb.academic, a, q, zone)
+
+    @app.post("/v1/research/portal")
+    def research_portal(body: PortalBody, a: dict = Depends(agent)):
+        return _research(wb.fetch_authenticated, a, body.url, body.credential, body.approval_id)
+
+    @app.post("/v1/research/tor/fetch")
+    def research_tor(body: FetchBody, a: dict = Depends(agent)):
+        return _research(tr.fetch, a, body.url, body.mission_id)
+
+    @app.get("/admin/research/evidence", dependencies=[Depends(admin)])
+    def research_evidence(darkweb: bool = False):
+        return (tr.evidence if darkweb else wb.evidence).list()
+
+    @app.post("/admin/research/tor/setup", dependencies=[Depends(admin)])
+    def research_tor_setup():
+        return _research(tr.setup)
+
+    @app.get("/admin/research/tor/status", dependencies=[Depends(admin)])
+    def research_tor_status():
+        try:
+            return tr.status()
+        except OSError as exc:
+            return {"network_internal": False, "gateway_running": False, "error": str(exc)}
 
     # ----- security operations -----
     @app.get("/v1/secops/tools")
