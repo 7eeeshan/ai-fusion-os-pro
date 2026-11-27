@@ -14,7 +14,10 @@ from typing import Any, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from .. import paths
 from ..engine_link import EngineLink
+from ..memory import MemoryStore
+from ..skills import SkillManager
 from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
 from ..sandbox.docker import SandboxError
 from ..security.controller import SecurityController
@@ -64,6 +67,48 @@ class SandboxBody(BaseModel):
     stdin: Optional[str] = None
 
 
+class MemoryWriteBody(BaseModel):
+    agent_id: str
+    zone: str = "standard"
+    mission_id: Optional[str] = None
+    content: str
+    kind: str = "semantic"
+    source: str
+    source_type: str = "agent"
+    trust: str = "agent"
+    tags: list[str] = Field(default_factory=list)
+    relations: list[tuple[str, str, str]] = Field(default_factory=list)
+
+
+class EpisodeBody(BaseModel):
+    agent_id: str
+    zone: str = "standard"
+    mission_id: Optional[str] = None
+    goal: str
+    steps: list[str]
+    outcome: str
+    error: Optional[str] = None
+
+
+class ResolveBody(BaseModel):
+    resolution: str
+
+
+class SkillSubmitBody(BaseModel):
+    files: dict[str, str]
+
+
+class SkillRegisterBody(BaseModel):
+    zone: str = "standard"
+    approval_id: Optional[str] = None
+
+
+class SkillRunBody(BaseModel):
+    zone: str = "standard"
+    mission_id: Optional[str] = None
+    inputs: dict[str, Any] = Field(default_factory=dict)
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -71,10 +116,13 @@ class ScanBody(BaseModel):
 
 
 def create_app(controller: Optional[SecurityController] = None, sandbox: Optional[DockerSandbox] = None,
-               engine: Optional[EngineLink] = None) -> FastAPI:
+               engine: Optional[EngineLink] = None, memory: Optional[MemoryStore] = None,
+               skills: Optional[SkillManager] = None) -> FastAPI:
     ctl = controller or SecurityController()
     sbx = sandbox or DockerSandbox()
     eng = engine or EngineLink()
+    mem = memory or MemoryStore(paths.home() / "memory.db")
+    skm = skills or SkillManager(ctl, paths.home() / "skills")
     app = FastAPI(title="AI Fusion OS Pro", version="0.1.0")
     app.state.controller = ctl
 
@@ -137,7 +185,121 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
                 return {"id": r["id"], "status": r["status"], "note": r["note"]}
         raise HTTPException(404, "not found")
 
+    # ----- memory -----
+    def _gate(a: dict, action: str, zone: str, mission_id: Optional[str], params: dict) -> None:
+        v = ctl.authorize(ActionRequest(agent_id=a["agent_id"], action=action, zone=zone, mission_id=mission_id,
+                                        params=params), a)
+        if not v.allowed:
+            raise HTTPException(403, {"verdict": v.to_dict()})
+
+    @app.post("/v1/memory")
+    def memory_write(body: MemoryWriteBody, a: dict = Depends(agent)):
+        if body.agent_id != a["agent_id"]:
+            raise HTTPException(403, "agent_id does not match token")
+        _gate(a, "memory.write", body.zone, body.mission_id, {"kind": body.kind, "trust": body.trust, "source": body.source})
+        try:
+            rec = mem.write(body.content, body.kind, source=body.source, source_type=body.source_type,  # type: ignore[arg-type]
+                            trust=body.trust, agent_id=a["agent_id"], mission_id=body.mission_id, tags=body.tags)  # type: ignore[arg-type]
+            for s_, p_, o_ in body.relations:
+                mem.relate(s_, p_, o_, memory_id=rec.id, trust="external" if body.trust == "external" else "agent")
+        except (ValueError, PermissionError) as exc:
+            raise HTTPException(400, str(exc))
+        if rec.status == "quarantined":
+            ctl.audit.append(a["agent_id"], "memory.quarantine", {"id": rec.id, "findings": rec.findings})
+        return rec.to_dict()
+
+    @app.get("/v1/memory/search")
+    def memory_search(q: str, k: int = 8, kind: Optional[str] = None, zone: str = "standard",
+                      a: dict = Depends(agent)):
+        _gate(a, "memory.read", zone, None, {"q": q[:200]})
+        recs = mem.search(q, k=min(k, 50), kinds=[kind] if kind else None)
+        return [{**r.to_dict(), "prompt": r.for_prompt()} for r in recs]
+
+    @app.get("/v1/memory/graph")
+    def memory_graph(node: str, depth: int = 1, zone: str = "standard", a: dict = Depends(agent)):
+        _gate(a, "memory.read", zone, None, {"node": node[:200]})
+        return mem.neighbors(node, depth)
+
+    @app.post("/v1/episodes")
+    def episode(body: EpisodeBody, a: dict = Depends(agent)):
+        _gate(a, "memory.write", body.zone, body.mission_id, {"kind": "episodic"})
+        try:
+            return {"id": mem.record_episode(body.goal, body.steps, body.outcome, mission_id=body.mission_id,  # type: ignore[arg-type]
+                                             error=body.error, agent_id=a["agent_id"])}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/v1/episodes/{episode_id}/resolve")
+    def resolve(episode_id: str, body: ResolveBody, a: dict = Depends(agent)):
+        _gate(a, "memory.write", "standard" if "standard" in a["zones"] else a["zones"][0], None, {"kind": "procedural"})
+        if not mem.resolve_failure(episode_id, body.resolution):
+            raise HTTPException(404, "no such failed episode")
+        return {"ok": True}
+
+    @app.get("/v1/lessons")
+    def lessons(goal: str, zone: str = "standard", a: dict = Depends(agent)):
+        _gate(a, "memory.read", zone, None, {"goal": goal[:200]})
+        return mem.lessons(goal)
+
+    # ----- skills -----
+    @app.get("/v1/skills")
+    def skills_list(_: dict = Depends(agent)):
+        return skm.list()
+
+    @app.get("/v1/skills/match")
+    def skills_match(need: str, _: dict = Depends(agent)):
+        hits = skm.find_for_capability(need)
+        return {"need": need, "matches": hits, "gap": not hits}
+
+    @app.post("/v1/skills/submit")
+    def skills_submit(body: SkillSubmitBody, a: dict = Depends(agent)):
+        try:
+            return skm.submit(body.files, a["agent_id"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)[:1000])
+
+    @app.post("/v1/skills/{name}/{version}/register")
+    def skills_register(name: str, version: str, body: SkillRegisterBody, a: dict = Depends(agent)):
+        try:
+            return skm.register(name, version, a, body.zone, body.approval_id).to_dict()
+        except KeyError as exc:
+            raise HTTPException(404, str(exc))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/v1/skills/{name}/run")
+    def skills_run(name: str, body: SkillRunBody, a: dict = Depends(agent)):
+        try:
+            return skm.run(name, body.inputs, a, body.zone, body.mission_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc))
+        except PermissionError as exc:
+            raise HTTPException(409, str(exc))
+        except SandboxUnavailable as exc:
+            raise HTTPException(503, str(exc))
+
     # ----- admin-facing -----
+    @app.get("/admin/memory", dependencies=[Depends(admin)])
+    def admin_memory(status: Optional[str] = None):
+        return {"stats": mem.stats(), "records": [r.to_dict() for r in mem.list(status)],
+                "recurring_failures": mem.failure_patterns()}
+
+    @app.post("/admin/memory/{mid}/{op}", dependencies=[Depends(admin)])
+    def admin_memory_op(mid: str, op: str):
+        fn = {"release": mem.release, "retract": mem.retract, "promote": mem.promote}.get(op)
+        if fn is None:
+            raise HTTPException(400, "op must be release, retract or promote")
+        ok = fn(mid)
+        ctl.audit.append("admin", f"memory.{op}", {"id": mid, "ok": ok})
+        return {"ok": ok}
+
+    @app.post("/admin/skills/{name}/rollback", dependencies=[Depends(admin)])
+    def admin_skill_rollback(name: str):
+        try:
+            return {"active": skm.rollback(name)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
     @app.get("/admin/status", dependencies=[Depends(admin)])
     def status():
         return {**ctl.status(), "sandbox": dict(zip(("available", "detail"), sbx.available())),

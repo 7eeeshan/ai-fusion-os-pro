@@ -14,5 +14,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: docker pull -q alpine:3.20
+      - run: docker pull -q alpine:3.20 && docker pull -q python:3.12-slim
       - run: AFE_URL=http://127.0.0.1:1 python -m pytest -q

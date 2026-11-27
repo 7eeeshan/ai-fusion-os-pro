@@ -7,8 +7,8 @@ The upgrade is delivered in phases. Every phase ships only features with a worki
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Security controller, policy engine, sandboxed execution, approvals, audit log, budgets, emergency stop, untrusted-content handling, optional engine link | **This release** |
-| 2 | Memory (semantic, episodic, procedural, knowledge graph, RAG) with provenance and poisoning checks; skill manager | Next |
+| 1 | Security controller, policy engine, sandboxed execution, approvals, audit log, budgets, emergency stop, untrusted-content handling, optional engine link | Done |
+| 2 | Memory (semantic, episodic, procedural, knowledge graph, retrieval) with provenance and poisoning checks; experience learning; skill manager | **This release** |
 | 3 | Mission runner and multi-agent coordination (bounded teams, loop and resource limits, independent verification) | Planned |
 | 4 | Cybersecurity division: permission-controlled tool adapters (Nmap, ZAP, Nuclei, Semgrep, Trivy, YARA, ...) running in the sandbox, OWASP/ATT&CK-mapped reports | Planned |
 | 5 | Research engines: surface web, authorized portals, isolated Tor zone | Planned |
@@ -50,6 +50,43 @@ tool coercion, attempts to disable safety, hidden Unicode).
 **Engine link**: if AI Fusion Engine Pro is running (`AFE_URL`, `AFE_TOKEN`), status, models and chat go through its
 API. If not, it reports itself as disconnected.
 
+## Phase 2: memory, learning and skills
+
+**Memory** (`fusion_os/memory`, SQLite): semantic facts, episodic mission history, procedural know-how and a
+knowledge graph (subject, predicate, object). Retrieval is BM25 full-text ranking, blended with vector similarity
+when an embedding function is supplied, and weighted by trust. Every record keeps its source, source type, agent,
+mission and content hash.
+
+Poisoning defences: trust levels `verified` > `user` > `agent` > `external`. Agents can't write `verified`; only the
+admin can promote. External or agent content that trips the injection scan is quarantined and never retrieved until
+the admin releases it. External memories always come back wrapped as untrusted data. Duplicates are ignored, and
+retracted records stay for audit. Every write and read goes through the security gate, so the dark-web zone can't
+write memory.
+
+**Learning from experience**: each mission outcome is recorded. A success becomes a reusable procedure. A failure is
+kept with its error, and when it's resolved the fix becomes a procedure too. `lessons(goal)` returns what worked
+and what failed for similar goals, and `failure_patterns()` lists recurring unresolved errors.
+
+This phase covers knowledge acquisition and workflow reuse. Prompt optimisation and model fine-tuning are separate
+and come in Phase 6.
+
+**Skills** (`fusion_os/skills`): a skill is a folder with `skill.json`, an entrypoint and tests (see
+`examples/skills/text-stats`). Submitting one triggers automatic validation:
+- manifest and licence allowlist (MIT, Apache-2.0, BSD, ISC, MPL-2.0, ...);
+- a file check (relative paths only, allowed file types, under 1 MB, no symlinks);
+- AST static analysis (no subprocess, ctypes, pickle, eval/exec, os.system, dunder tricks; no network modules
+  unless the manifest asks for network);
+- a dependency check (standard library only for now);
+- the skill's own tests and an example run, both in the Docker sandbox with no network.
+
+Only validated skills can be registered, and registration needs a human approval bound to the skill's content hash.
+Active skills run for any agent allowed `skill.execute`, always in the sandbox. A skill whose files change after
+approval refuses to run. Versions are kept, and `rollback` restores the previous one. `GET /v1/skills/match`
+reports a capability gap when no active skill covers a need.
+
+Verified live here: the example skill passes validation in the sandbox, waits for approval, runs after approval,
+upgrades to 1.1.0 and rolls back to 1.0.0, and a tampered skill is blocked.
+
 ## Run
 
 ```powershell
@@ -63,11 +100,13 @@ python -m venv .venv
 
 Docker Desktop is needed for the sandbox. Data lives in `%LOCALAPPDATA%\AIFusionOSPro` (override with `FUSION_OS_HOME`).
 
-## API (Phase 1)
+## API
 
-Agent token: `POST /v1/authorize`, `POST /v1/sandbox/exec`, `POST /v1/untrusted/scan`, `GET /v1/approvals/{id}`.
+Agent token: `POST /v1/authorize`, `POST /v1/sandbox/exec`, `POST /v1/untrusted/scan`, `GET /v1/approvals/{id}`,
+`POST /v1/memory`, `GET /v1/memory/search`, `GET /v1/memory/graph`, `POST /v1/episodes[/{id}/resolve]`, `GET /v1/lessons`,
+`GET /v1/skills`, `GET /v1/skills/match`, `POST /v1/skills/submit`, `POST /v1/skills/{name}/{version}/register`, `POST /v1/skills/{name}/run`.
 Admin token: `/admin/status`, `/admin/approvals[/{id}]`, `/admin/audit[/verify]`, `/admin/engagements`,
-`/admin/agents`, `/admin/budgets/{mission}`, `/admin/policy`, `/admin/emergency-stop`, `/admin/resume`, `/admin/engine`.
+`/admin/agents`, `/admin/budgets/{mission}`, `/admin/memory[/{id}/release|retract|promote]`, `/admin/skills/{name}/rollback`, `/admin/policy`, `/admin/emergency-stop`, `/admin/resume`, `/admin/engine`.
 
 ## Limits of Phase 1 (honest list)
 
@@ -76,4 +115,7 @@ Admin token: `/admin/status`, `/admin/approvals[/{id}]`, `/admin/audit[/verify]`
 - The admin token sits in a 0600 file; moving it to Windows Credential Manager is planned.
 - Prompt-injection detection is pattern-based and will miss novel attacks. It is one layer: the real protection is
   that external content can never change policy, approvals or permissions.
-- No security tools, research engines, memory or dashboard yet. Those are later phases.
+- No security tools, research engines or dashboard yet. Those are later phases.
+- Skills can't use third-party packages yet. That needs a vetted, offline wheel cache, which comes with Phase 4.
+- Searching skills on the internet and drafting new ones automatically comes with the mission runner in Phase 3.
+  Phase 2 provides the validate, approve, register and run pipeline those drafts will go through.
