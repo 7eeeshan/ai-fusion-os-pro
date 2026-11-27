@@ -1,0 +1,7 @@
+SocksPort 0.0.0.0:9050
+# Only the internal research network may use the proxy.
+SocksPolicy accept 172.16.0.0/12
+SocksPolicy accept 10.0.0.0/8
+SocksPolicy reject *
+DataDirectory /var/lib/tor
+Log notice stdout
