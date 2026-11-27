@@ -16,7 +16,9 @@ from pydantic import BaseModel, Field
 
 from .. import paths
 from ..engine_link import EngineLink
+from ..llm import Router
 from ..memory import MemoryStore
+from ..missions import MissionRunner
 from ..skills import SkillManager
 from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
 from ..sandbox.docker import SandboxError
@@ -109,6 +111,10 @@ class SkillRunBody(BaseModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
 
 
+class MissionBody(BaseModel):
+    goal: str = Field(min_length=3, max_length=4000)
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -117,14 +123,18 @@ class ScanBody(BaseModel):
 
 def create_app(controller: Optional[SecurityController] = None, sandbox: Optional[DockerSandbox] = None,
                engine: Optional[EngineLink] = None, memory: Optional[MemoryStore] = None,
-               skills: Optional[SkillManager] = None) -> FastAPI:
+               skills: Optional[SkillManager] = None, missions: Optional[MissionRunner] = None) -> FastAPI:
     ctl = controller or SecurityController()
     sbx = sandbox or DockerSandbox()
     eng = engine or EngineLink()
     mem = memory or MemoryStore(paths.home() / "memory.db")
     skm = skills or SkillManager(ctl, paths.home() / "skills")
+    mis = missions or MissionRunner(ctl, mem, Router(), paths.home() / "missions.db", skills=skm)
     app = FastAPI(title="AI Fusion OS Pro", version="0.1.0")
     app.state.controller = ctl
+    app.state.missions = mis
+    app.state.memory = mem
+    app.state.skills = skm
 
     def admin(authorization: Optional[str] = Header(None)) -> str:
         if not ctl.is_admin(_bearer(authorization)):
@@ -292,6 +302,35 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         ok = fn(mid)
         ctl.audit.append("admin", f"memory.{op}", {"id": mid, "ok": ok})
         return {"ok": ok}
+
+    @app.post("/admin/missions", dependencies=[Depends(admin)])
+    def mission_start(body: MissionBody):
+        return {"id": mis.start(body.goal, "admin")}
+
+    @app.get("/admin/missions", dependencies=[Depends(admin)])
+    def mission_list():
+        return mis.list()
+
+    @app.get("/admin/missions/{mid}", dependencies=[Depends(admin)])
+    def mission_get(mid: str):
+        m = mis.get(mid)
+        if not m:
+            raise HTTPException(404, "not found")
+        return m
+
+    @app.post("/admin/missions/{mid}/stop", dependencies=[Depends(admin)])
+    def mission_stop(mid: str):
+        mis.stop(mid)
+        return {"ok": True}
+
+    @app.post("/admin/missions/{mid}/resume", dependencies=[Depends(admin)])
+    def mission_resume(mid: str):
+        regs = mis.complete_skill_registration(mid)
+        try:
+            mis.resume(mid)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        return {"skills": regs}
 
     @app.post("/admin/skills/{name}/rollback", dependencies=[Depends(admin)])
     def admin_skill_rollback(name: str):
