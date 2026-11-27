@@ -157,16 +157,12 @@ class MissionRunner:
         return out
 
     def _worker_prompt(self, inputs: dict, ctx: dict) -> str:
-        # Each earlier result gets up to 6,000 chars and all of them 8,000 in total: enough to summarise a whole
-        # README while still fitting a 4k-token local model context.
-        prior, budget = [], 8000
-        for k, v in ctx.get("results", {}).items():
-            text = str(v)[:min(6000, budget)]
-            budget -= len(text)
-            prior.append(f"- step {k}: {text}")
-            if budget <= 0:
-                break
-        prior = "\n".join(prior)
+        # Earlier results get up to 6000 chars each (8000 in total, newest kept) so a worker can actually use a file it
+        # was asked to summarise (1500 cut a README to its first paragraph), while staying inside a 4096-token local model.
+        parts = [f"- step {k}: {str(v)[:6000]}" for k, v in ctx.get("results", {}).items()]
+        while len(parts) > 1 and sum(map(len, parts)) > 8000:
+            parts.pop(0)
+        prior = "\n".join(parts)[-8000:]
         return f"Mission goal: {ctx['goal']}\nYour role: {ctx['role']}\nEarlier results:\n{prior or '(none)'}\n\nTask: {inputs.get('task', inputs)}"
 
     # ---------- persistence ----------
