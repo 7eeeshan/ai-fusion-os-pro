@@ -269,6 +269,11 @@ def main(argv):
     sys.path[:] = [cfg["work"]] + [p for p in sys.path if p and os.path.isdir(p) and not p.startswith(cfg["work"])]
     import runpy  # noqa: needed before the hook so the runner itself is loaded from the install
     import unittest  # noqa: preload: the hook lists directories, and test discovery needs this from the install
+    # Preload stdlib modules that import blocked native helpers internally (shutil and argparse use _winapi on
+    # Windows). Their dangerous calls still raise audit events the hook refuses, and the Windows job allows no child
+    # process, but fresh imports of those helpers by untrusted code stay blocked.
+    import argparse  # noqa
+    import shutil  # noqa
     install(cfg)
     if cfg["mode"] == "code":
         sys.argv = ["-c"] + list(cfg.get("args", []))
