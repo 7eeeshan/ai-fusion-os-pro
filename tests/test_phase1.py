@@ -212,3 +212,13 @@ def test_api_end_to_end(tmp_path):
     assert client.get("/admin/audit/verify", headers=adm).json()["ok"]
     st = client.get("/admin/status", headers=adm).json()
     assert st["sandbox"]["available"] is False and st["engine_link"]["connected"] is False
+
+
+def test_admin_token_from_env(tmp_path, monkeypatch):
+    from fusion_os.security.controller import SecurityController
+    monkeypatch.setenv("FUSION_OS_ADMIN_TOKEN", "t" * 40)
+    assert SecurityController(tmp_path / "sec").admin_token() == "t" * 40
+    monkeypatch.setenv("FUSION_OS_ADMIN_TOKEN", "short")
+    import pytest
+    with pytest.raises(ValueError):
+        SecurityController(tmp_path / "sec2")
