@@ -1,0 +1,12 @@
+{
+  "name": "text-stats",
+  "version": "1.0.0",
+  "description": "Count words, sentences and the most frequent terms in a text.",
+  "entrypoint": "main.py",
+  "license": "MIT",
+  "author": "AI Fusion OS Pro",
+  "network": "none",
+  "timeout_s": 20,
+  "example_input": {"text": "Alpha beta. Beta gamma beta.", "top": 2},
+  "capabilities": ["text analysis", "word count", "keyword frequency"]
+}
