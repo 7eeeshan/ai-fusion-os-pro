@@ -18,3 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fusion_os.api.server import create_app  # noqa: E402
 
 app = create_app()
+
+from fastapi.responses import RedirectResponse  # noqa: E402
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse("/dashboard")
