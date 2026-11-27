@@ -10,6 +10,7 @@ import threading
 import time
 from html.parser import HTMLParser
 from pathlib import Path
+from ..db import SafeConn
 from typing import Any, Optional
 
 
@@ -116,8 +117,7 @@ class EvidenceStore:
 
     def __init__(self, path: Path):
         self.lock = threading.RLock()
-        self.conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(path)
         self.conn.execute("CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, url TEXT, source_type TEXT, "
                           "fetched REAL, sha256 TEXT, title TEXT, language TEXT, categories TEXT, flags TEXT, "
                           "injection TEXT, excerpt TEXT, translation TEXT, agent_id TEXT)")

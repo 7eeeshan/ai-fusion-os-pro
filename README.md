@@ -7,13 +7,13 @@ The upgrade is delivered in phases. Every phase ships only features with a worki
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Security controller, policy engine, sandboxed execution, approvals, audit log, budgets, emergency stop, untrusted-content handling, optional engine link | Done |
-| 2 | Memory (semantic, episodic, procedural, knowledge graph, retrieval) with provenance and poisoning checks; experience learning; skill manager | **This release** |
-| 3 | Mission runner and multi-agent coordination (bounded teams, loop and resource limits, independent verification) | Planned |
-| 4 | Cybersecurity division: permission-controlled tool adapters (Nmap, ZAP, Nuclei, Semgrep, Trivy, YARA, ...) running in the sandbox, OWASP/ATT&CK-mapped reports | Planned |
-| 5 | Research engines: surface web, authorized portals, isolated Tor zone | Planned |
-| 6 | Technology intelligence, model benchmarking and upgrades with rollback, self-healing | Planned |
-| 7 | Cloud worker and queues; dashboard | Planned |
+| 1 | Security controller, policy engine, sandbox, approvals, audit log, budgets, emergency stop, untrusted content | Done |
+| 2 | Memory with provenance and poisoning checks, learning from experience, skill manager | Done |
+| 3 | Mission runner: bounded multi-agent teams, plan experiments, verification, replanning, skill-gap acquisition | Done |
+| 4 | Cybersecurity division: sandboxed tool adapters, engagement-scoped testing, findings, verification, reports, IDS ingest | Done |
+| 5 | Research: guarded web fetch, search, arXiv, approved portal access, isolated Tor zone, evidence stores | Done |
+| 6 | Technology intelligence, model benchmarking and approved upgrades with rollback, health, self-healing, backups, improvement lab | Done |
+| 7 | Cloud queue and workers (local/cloud hand-over without duplicates), scheduler, Docker deployment, mission control dashboard | Done |
 
 ## Phase 1: what it does
 
@@ -87,6 +87,96 @@ reports a capability gap when no active skill covers a need.
 Verified live here: the example skill passes validation in the sandbox, waits for approval, runs after approval,
 upgrades to 1.1.0 and rolls back to 1.0.0, and a tampered skill is blocked.
 
+## Phase 3: missions and multi-agent reasoning
+
+`POST /admin/missions {"goal": ...}` starts a mission. The planner drafts several candidate plans; a critic scores
+them against lessons from past missions; a dry run rejects plans with unknown tools, too many steps or roles, or
+actions the policy would deny. Each step runs as a role agent with its own short-lived identity through the security
+gate, and an independent verifier checks every result. Failed steps trigger reflection and a revised plan (at most
+`max_replans`). Limits: steps, replans, team size, wall time and a per-mission budget that every model call is
+charged against. Missions can't start missions. When a plan needs a capability nobody has, the model drafts a skill,
+which goes through sandbox validation and waits for your approval; the mission resumes after it. Outcomes become
+episodes, so the next similar mission sees what worked and what failed.
+
+Models: AI Fusion Engine Pro, your PC's engine through the queue, then Anthropic, tried in `FUSION_OS_LLM_ORDER`
+order with automatic fallback. With no model available a mission is marked `blocked`, never simulated.
+
+## Phase 4: cybersecurity division
+
+Adapters for Nmap, Nuclei, Semgrep, Trivy and YARA, each running in a
+pinned container image in the sandbox. Active testing is refused unless the target is inside an engagement's
+allowlist, not excluded, inside its time window, with an authorized tool and within its request budget. Findings are
+de-duplicated, mapped to OWASP and MITRE ATT&CK, carry evidence and remediation, and are tracked through
+open, verified, fixed, false positive and accepted risk. Verification re-tests need approval. Reports (Markdown)
+include scope and authorization, methodology, severity summary, evidence, remediation, verification steps and output
+hashes. Suricata EVE alerts can be ingested for the defensive view. Verified live: an Nmap scan of a lab container,
+the report, and an approved verification re-test.
+
+Not yet: ZAP, Burp Suite, OpenVAS, Ghidra, Volatility and Wazuh adapters; PentestGPT-style autonomous exploitation is
+deliberately not included.
+
+## Phase 5: research
+
+Surface web fetching blocks private, loopback, link-local and metadata addresses (also after redirects), honours
+robots.txt, refuses binaries, redacts credentials it finds, scans for prompt injection, flags malicious content,
+classifies and guesses language (with optional translation by a model), and stores evidence with hashes. Web search
+uses SearXNG or Brave if configured; arXiv works without a key. Private portals use a credential that is released
+only after you approve that exact request.
+
+The Tor zone (`POST /admin/research/tor/setup`) creates an internal Docker network with no internet route, plus a
+Tor gateway container that is its only way out. Each onion fetch runs in a fresh locked-down container on that
+network with no credentials, files or host environment; only `.onion` addresses and text content are accepted, and
+results go to a separate dark-web evidence store. Dark-web identities cannot write memory, read files or
+credentials, or use tools. Verified here: the internal network has no internet, and the fetcher speaks SOCKS5 with
+remote DNS. Not verified here: a real Tor connection (this build environment cannot reach the Tor network).
+
+## Phase 6: technology and model intelligence, self-improvement
+
+The tech-intel agent reads GitHub, PyPI, npm, OSV, Hugging Face, arXiv and the official MCP registry, and keeps a
+registry with available, evaluated, approved, rejected and deprecated states. Licence, maintenance, reliability and
+known vulnerabilities are scored from data; hardware, performance, cost, compatibility, integration and
+functionality stay blank until measured or entered. A new version of an approved item goes back to `available`.
+
+Model benchmarking runs repeatable suites with automatic checks, records accuracy and latency, compares a candidate
+with the deployed model and recommends only measured improvements. Deploying needs approval; rollback restores the
+previous model. The health monitor checks policy integrity, the audit chain, databases, sandbox, engine link, disk
+and stuck missions, gives advice from recurring failures, and only performs safe repairs. The improvement lab lets
+agents propose prompt, routing or workflow changes; each is benchmarked, must not regress, needs approval, and is
+rolled back automatically if the post-change health check fails. Backups cover every database, the policy, skills and
+config; restore takes a safety backup first.
+
+## Phase 7: cloud operation and dashboard
+
+A persistent job queue with idempotency keys, leases and heartbeats: if your PC switches off mid-job, its lease
+expires and a cloud worker takes over, and the PC can no longer record a duplicate result. Jobs can require
+capabilities (for example `local-engine`) with a fallback when no such node is alive. The scheduler enqueues recurring
+work (tech scan, health, backups) once per slot even with several schedulers. Deploy the server to a cloud VM with
+`docker compose up -d`; on your PC run
+`python -m fusion_os worker --server https://<your-server> --token <agent token> --capabilities local-engine`
+so model calls use AI Fusion Engine Pro while the PC is on and fall back to the cloud model when it is off.
+
+Mission control is at `/dashboard`: overview and missions, cybersecurity operations center, authorized testing,
+vulnerability management, threat intelligence, deep research, technology discovery, knowledge graph, learning
+history, skill lab, model benchmarking, approval center, security and permissions (including emergency stop),
+recovery and rollback, and cloud/local resources. Every page reads from the live API; a test checks that every
+endpoint the dashboard calls answers.
+
+## Acceptance requirements: where each one stands
+
+| # | Requirement | Status |
+|---|---|---|
+| 1 | Unfamiliar permitted missions | Mission runner works end to end (tested with a scripted model); needs a model configured on your side |
+| 2 | Discover and develop new reusable skills | Verified: gap detected, skill drafted, validated in sandbox, approved, used |
+| 3 | Authorized security testing and reports | Verified live with Nmap against a lab target |
+| 4 | Isolated lawful Tor research | Isolation verified; a real Tor fetch not yet run |
+| 5 | Continuous technology discovery | Implemented and scheduled; MCP registry verified live, other sources blocked by this build environment's network |
+| 6 | Model and tool benchmarking | Verified with test models; real models need your engine or API key |
+| 7 | Learning from failures | Verified |
+| 8 | Verified installation of approved capabilities | Verified for skills and model deployment |
+| 9 | Running with the PC off | Queue hand-over verified; the cloud deployment itself is not yet deployed |
+| 10 | Secure recovery after failed updates | Verified: automatic rollback, backups and restore |
+| 11 | Independent security policies | Verified: immutable rules, pinned policy, fail-closed |
+
 ## Run
 
 ```powershell
@@ -102,20 +192,20 @@ Docker Desktop is needed for the sandbox. Data lives in `%LOCALAPPDATA%\AIFusion
 
 ## API
 
-Agent token: `POST /v1/authorize`, `POST /v1/sandbox/exec`, `POST /v1/untrusted/scan`, `GET /v1/approvals/{id}`,
+Full list at `/docs` when the server runs. Agent token: `POST /v1/authorize`, `POST /v1/sandbox/exec`, `POST /v1/untrusted/scan`, `GET /v1/approvals/{id}`,
 `POST /v1/memory`, `GET /v1/memory/search`, `GET /v1/memory/graph`, `POST /v1/episodes[/{id}/resolve]`, `GET /v1/lessons`,
 `GET /v1/skills`, `GET /v1/skills/match`, `POST /v1/skills/submit`, `POST /v1/skills/{name}/{version}/register`, `POST /v1/skills/{name}/run`.
 Admin token: `/admin/status`, `/admin/approvals[/{id}]`, `/admin/audit[/verify]`, `/admin/engagements`,
 `/admin/agents`, `/admin/budgets/{mission}`, `/admin/memory[/{id}/release|retract|promote]`, `/admin/skills/{name}/rollback`, `/admin/policy`, `/admin/emergency-stop`, `/admin/resume`, `/admin/engine`.
 
-## Limits of Phase 1 (honest list)
+## Known limits
 
-- The controller runs in the same process as the API; separating it into its own OS service with its own account
-  comes with the mission runner in Phase 3.
+- The controller runs in the same process as the API. Running it as its own OS service with its own account is
+  the next hardening step.
 - The admin token sits in a 0600 file; moving it to Windows Credential Manager is planned.
 - Prompt-injection detection is pattern-based and will miss novel attacks. It is one layer: the real protection is
   that external content can never change policy, approvals or permissions.
-- No security tools, research engines or dashboard yet. Those are later phases.
 - Skills can't use third-party packages yet. That needs a vetted, offline wheel cache, which comes with Phase 4.
-- Searching skills on the internet and drafting new ones automatically comes with the mission runner in Phase 3.
-  Phase 2 provides the validate, approve, register and run pipeline those drafts will go through.
+- Fine-tuning models is not included yet: this build improves knowledge, workflows and prompts, and selects better
+  models by benchmark.
+- The Docker image and compose file have not been built or deployed from here.

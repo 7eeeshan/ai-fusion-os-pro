@@ -108,6 +108,11 @@ def default_policy_text() -> str:
     return resources.files("fusion_os.security").joinpath("default_policy.json").read_text(encoding="utf-8")
 
 
+# SHA-256 of earlier *unmodified* default policies. An untouched old default is upgraded to the current default on
+# start; a policy the admin changed is never replaced automatically.
+PREVIOUS_DEFAULTS = {"fdf59e84b73708797c135b78a64f721ccab8aab28cbba4c7be75a37a99e33852"}
+
+
 class PolicyEngine:
     def __init__(self, policy_file: Path, lock_file: Path):
         self.policy_file = policy_file
@@ -115,6 +120,15 @@ class PolicyEngine:
         self.doc: Optional[PolicyDoc] = None
         self.integrity_error: Optional[str] = None
         if not policy_file.exists():
+            self.install(default_policy_text())
+        self.upgraded_from: Optional[str] = None
+        cur = self.current_hash()
+        try:
+            pinned = lock_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            pinned = ""
+        if cur in PREVIOUS_DEFAULTS and cur == pinned:
+            self.upgraded_from = cur
             self.install(default_policy_text())
         self.reload()
 

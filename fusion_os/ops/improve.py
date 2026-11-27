@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..db import SafeConn
 from ..config_store import ConfigStore
 from ..security.controller import SecurityController
 from ..security.policy import ActionRequest
@@ -22,8 +23,7 @@ class ImprovementLab:
                  evaluator: Callable[[str, Any], float], post_check: Optional[Callable[[], bool]] = None):
         """evaluator(config_key, value) -> score in [0,1] measured on a benchmark with that value in effect."""
         self.ctl, self.cfg, self.evaluate, self.post_check = ctl, cfg, evaluator, post_check
-        self.conn = sqlite3.connect(str(db), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(db)
         self.conn.execute("CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, kind TEXT, key TEXT, value TEXT, "
                           "rationale TEXT, by TEXT, status TEXT, baseline REAL, score REAL, created REAL, updated REAL, approval_id TEXT)")
 

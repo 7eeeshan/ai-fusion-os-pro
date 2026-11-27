@@ -156,7 +156,7 @@ def test_onion_fetcher_speaks_socks5_with_remote_dns():
     from fusion_os.research import onion_fetch
     script = onion_fetch.__file__
     p = subprocess.run([sys.executable, "-I", script], input=json.dumps({"url": "http://exampleonionaddressxyz.onion/t"}),
-                       capture_output=True, text=True, env={"TOR_HOST": "127.0.0.1", "TOR_PORT": str(sx.port)}, timeout=30)
+                       capture_output=True, text=True, env={**os.environ, "TOR_HOST": "127.0.0.1", "TOR_PORT": str(sx.port)}, timeout=30)
     out = json.loads(p.stdout)
     assert out["status"] == 200 and "forum thread" in out["body"]
     assert sx.seen == ["exampleonionaddressxyz.onion"]  # hostname resolved by the proxy, not locally

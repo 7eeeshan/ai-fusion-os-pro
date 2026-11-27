@@ -55,6 +55,8 @@ class SecurityController:
         self._admin_file = self.dir / "admin_token"
         if not self._admin_file.exists():
             paths.write_private(self._admin_file, "fos_admin_" + secrets.token_urlsafe(32))
+        if self.policy.upgraded_from:
+            self.audit.append("system", "policy.default_upgrade", {"from": self.policy.upgraded_from, "to": self.policy.current_hash()})
         self.audit.append("system", "controller.start", {"policy_ok": self.policy.doc is not None,
                                                           "policy_error": self.policy.integrity_error})
 

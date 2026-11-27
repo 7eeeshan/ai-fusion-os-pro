@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..db import SafeConn
 from ..llm import LLMUnavailable, extract_json
 from ..memory import MemoryStore
 from ..security.controller import SecurityController
@@ -75,17 +76,31 @@ CREATE TABLE IF NOT EXISTS missions (
 
 class MissionRunner:
     def __init__(self, ctl: SecurityController, memory: MemoryStore, llm: Any, db_path: Path,
-                 skills: Any = None, limits: Optional[MissionLimits] = None, config: Any = None):
+                 skills: Any = None, limits: Optional[MissionLimits] = None, config: Any = None,
+                 workspace: Optional[Path] = None):
         self.ctl, self.mem, self.llm, self.skills, self.cfg = ctl, memory, llm, skills, config
+        import os
+        self.workspace = Path(workspace or os.environ.get("FUSION_OS_WORKSPACE") or Path.cwd())
         self.limits = limits or MissionLimits()
         self.tools: dict[str, Tool] = {}
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(db_path)
         self.conn.executescript(SCHEMA)
         self.lock = threading.RLock()
         self._agents: dict[str, dict] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._register_builtin_tools()
+        self._mark_interrupted()
+
+    def _mark_interrupted(self) -> None:
+        """Missions that were mid-run when the server last stopped can't continue: mark them so they don't show as
+        running forever. Missions waiting on an approval are left alone; they resume when it arrives."""
+        with self.lock:
+            rows = self.conn.execute("SELECT id FROM missions WHERE status IN ('planning','running','stopping')").fetchall()
+            for r in rows:
+                self.conn.execute("UPDATE missions SET status='interrupted', error=?, updated=? WHERE id=?",
+                                  ("server restarted while the mission was running", time.time(), r["id"]))
+        for r in rows:
+            self.ctl.audit.append("mission-runner", "mission.interrupted", {"mission_id": r["id"]})
 
     # ---------- tools ----------
     def register_tool(self, tool: Tool) -> None:
@@ -94,11 +109,44 @@ class MissionRunner:
     def _register_builtin_tools(self) -> None:
         self.register_tool(Tool("think", "llm.chat", "Reason, draft, summarise or write text. inputs: {task}",
                                 lambda i, c: self.llm.complete(SYSTEM["worker"], self._worker_prompt(i, c))))
+        self.register_tool(Tool("list_files", "files.read", "List files in the workspace folder. inputs: {path (optional subfolder)}",
+                                lambda i, c: self._list_files(str(i.get("path", "")))))
+        self.register_tool(Tool("read_file", "files.read", "Read a text file from the workspace folder. inputs: {path}",
+                                lambda i, c: self._read_file(str(i.get("path", ""))), untrusted_output=True))
         self.register_tool(Tool("memory_search", "memory.read", "Search long-term memory. inputs: {query}",
                                 lambda i, c: [r.for_prompt() for r in self.mem.search(str(i.get("query", "")), k=6)]))
         self.register_tool(Tool("remember", "memory.write", "Store a fact for later. inputs: {fact}",
                                 lambda i, c: self.mem.write(str(i["fact"]), source=f"mission:{c['mission_id']}",
                                                             trust="agent", mission_id=c["mission_id"]).id))
+
+    def _ws_path(self, rel: str) -> Path:
+        root = self.workspace.resolve()
+        p = (root / rel.replace("\\", "/").lstrip("/")).resolve()
+        if p != root and root not in p.parents:
+            raise PermissionError("path is outside the workspace")
+        return p
+
+    def _list_files(self, rel: str) -> list[str]:
+        p = self._ws_path(rel)
+        skip = {".git", ".venv", "node_modules", "__pycache__"}
+        out = []
+        for f in sorted(p.rglob("*")):
+            if any(part in skip for part in f.relative_to(p).parts):
+                continue
+            if f.is_file():
+                out.append(f.relative_to(self.workspace.resolve()).as_posix())
+            if len(out) >= 300:
+                break
+        return out
+
+    def _read_file(self, rel: str) -> str:
+        p = self._ws_path(rel)
+        if not p.is_file():
+            raise FileNotFoundError(rel)
+        data = p.read_bytes()[:200_000]
+        if b"\x00" in data[:4096]:
+            raise ValueError("binary files are not read")
+        return data.decode("utf-8", "replace")
 
     def _available_tools(self) -> dict[str, str]:
         out = {n: t.description for n, t in self.tools.items()}
@@ -109,7 +157,12 @@ class MissionRunner:
         return out
 
     def _worker_prompt(self, inputs: dict, ctx: dict) -> str:
-        prior = "\n".join(f"- step {k}: {str(v)[:1500]}" for k, v in ctx.get("results", {}).items())
+        # Earlier results get up to 6000 chars each (8000 in total, newest kept) so a worker can actually use a file it
+        # was asked to summarise (1500 cut a README to its first paragraph), while staying inside a 4096-token local model.
+        parts = [f"- step {k}: {str(v)[:6000]}" for k, v in ctx.get("results", {}).items()]
+        while len(parts) > 1 and sum(map(len, parts)) > 8000:
+            parts.pop(0)
+        prior = "\n".join(parts)[-8000:]
         return f"Mission goal: {ctx['goal']}\nYour role: {ctx['role']}\nEarlier results:\n{prior or '(none)'}\n\nTask: {inputs.get('task', inputs)}"
 
     # ---------- persistence ----------
@@ -165,7 +218,11 @@ class MissionRunner:
         return self.llm.complete(system, prompt)
 
     # ---------- public ----------
-    def start(self, goal: str, requested_by: str = "admin", background: bool = True) -> str:
+    def create(self, goal: str, requested_by: str = "admin") -> str:
+        """Record a mission without running it (queue mode: a worker runs it)."""
+        return self.start(goal, requested_by, background=None)
+
+    def start(self, goal: str, requested_by: str = "admin", background: Optional[bool] = True) -> str:
         if not goal.strip():
             raise ValueError("goal is empty")
         mid = "mis_" + secrets.token_hex(6)
@@ -175,6 +232,8 @@ class MissionRunner:
                               (mid, goal.strip(), "planning", now, now, requested_by))
         self.ctl.budgets.set(mid, self.limits.max_calls, self.limits.max_seconds, self.limits.max_usd)
         self.ctl.audit.append(requested_by, "mission.start", {"mission_id": mid, "goal": goal[:500]})
+        if background is None:
+            return mid
         if background:
             t = threading.Thread(target=self.run, args=(mid,), daemon=True, name=mid)
             self._threads[mid] = t
@@ -186,12 +245,14 @@ class MissionRunner:
     def stop(self, mid: str) -> None:
         self._upd(mid, status="stopping")
 
-    def resume(self, mid: str, background: bool = True) -> None:
+    def resume(self, mid: str, background: Optional[bool] = True) -> None:
         """Continue a mission that was waiting (e.g. on a skill approval)."""
         m = self.get(mid)
         if not m or m["status"] != "waiting":
             raise ValueError("mission is not waiting")
         self._upd(mid, status="planning", waiting_on=None)
+        if background is None:
+            return
         if background:
             threading.Thread(target=self.run, args=(mid,), daemon=True).start()
         else:
@@ -239,7 +300,10 @@ class MissionRunner:
                     ctx["results"][str(step.get("id", i + 1))] = result
                     i += 1
                     continue
-                self._log(mid, "step.failed", step=step.get("id"), reason=why)
+                self._log(mid, "step.failed", step=step.get("id"), reason=why,
+                          draft=None if result is None else str(result)[:2000])
+                if result is not None:  # keep the rejected output so the person can see what the agent produced
+                    ctx.setdefault("drafts", {})[str(step.get("id", i + 1))] = str(result)[:4000]
                 if replans >= self.limits.max_replans:
                     raise RuntimeError(f"step {step.get('id')} failed after {replans} replans: {why}")
                 replans += 1
@@ -351,9 +415,12 @@ class MissionRunner:
         expected = step.get("expected")
         if not expected:
             return True, "no expectation set"
+        lenient = ("This is a writing step: pass it if the content substantially achieves the outcome. Do not fail it "
+                   "for minor formatting differences such as bullet symbols, numbering, headings or an extra sentence.\n"
+                   if step.get("tool") == "think" else "")
         try:
             v = extract_json(self._ask(mid, "verifier", "verifier",
-                f"Step: {json.dumps(step)}\nExpected outcome: {expected}\nResult:\n{str(result)[:6000]}\n"
+                f"Step: {json.dumps(step)}\nExpected outcome: {expected}\n{lenient}Result:\n{str(result)[:6000]}\n"
                 'Return JSON {"pass": true|false, "reason": str}'))
             return bool(v.get("pass")), str(v.get("reason", ""))
         except ValueError:
@@ -417,7 +484,8 @@ class MissionRunner:
         m = self.get(mid) or {}
         plan = m.get("plan") or {}
         steps = [f"{s.get('role')}:{s.get('tool')}" for s in plan.get("steps", [])] if isinstance(plan, dict) else []
-        self._upd(mid, status=status, result={"final": ctx.get("final"), "steps": ctx.get("results", {})}, error=error)
+        self._upd(mid, status=status, result={"final": ctx.get("final"), "steps": ctx.get("results", {}),
+                                                     "rejected_drafts": ctx.get("drafts", {})}, error=error)
         if status in ("succeeded", "failed"):
             self.mem.record_episode(m.get("goal", ""), steps or ["(no plan)"], "success" if status == "succeeded" else "failure",
                                     mission_id=mid, error=error)

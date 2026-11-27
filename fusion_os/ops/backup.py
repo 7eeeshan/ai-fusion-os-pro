@@ -64,11 +64,20 @@ class BackupManager:
                 if self.home.resolve() not in dest.parents:
                     raise ValueError(f"unsafe path in backup: {m}")
                 dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.suffix == ".db" and dest.exists():
+                    # Copy into the live database with SQLite's backup API: safe with open connections and WAL,
+                    # and works on Windows where open files cannot be replaced.
+                    tmp = dest.with_suffix(".restore.tmp")
+                    tmp.write_bytes(z.read(m))
+                    src = sqlite3.connect(str(tmp))
+                    dst = sqlite3.connect(str(dest), timeout=30)
+                    src.backup(dst)
+                    dst.close()
+                    src.close()
+                    tmp.unlink()
+                    continue
                 if dest.exists():
                     dest.chmod(0o644)
                 dest.write_bytes(z.read(m))
-                if dest.suffix == ".db":  # stale WAL files from the newer state must not be replayed
-                    for side in (dest.with_name(dest.name + "-wal"), dest.with_name(dest.name + "-shm")):
-                        side.unlink(missing_ok=True)
         self.ctl.audit.append(by, "backup.restore", {"file": name, "safety_backup": safety, "files": len(members)})
         return {"restored": len(members), "safety_backup": safety, "restart_required": True}

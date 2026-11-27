@@ -28,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
     st.add_argument("reason", nargs="?", default="manual")
     sub.add_parser("resume")
     sub.add_parser("verify-audit")
+    w = sub.add_parser("worker", help="run a remote worker that serves jobs for a server (e.g. local model calls)")
+    w.add_argument("--server", required=True)
+    w.add_argument("--token", required=True, help="agent token issued by the server admin")
+    w.add_argument("--capabilities", default="local-engine")
+    w.add_argument("--location", default="local")
     args = p.parse_args(argv)
 
     if args.cmd == "serve":
@@ -36,6 +41,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.host not in ("127.0.0.1", "localhost", "::1"):
             print("warning: binding to a non-loopback address exposes the API to your network", file=sys.stderr)
         uvicorn.run(create_app(), host=args.host, port=args.port)
+        return 0
+    if args.cmd == "worker":
+        from .cloud.worker import RemoteQueue, Worker
+        from .llm import EngineLLM
+        llm = EngineLLM()
+        handlers = {"llm.complete": lambda p: llm.complete(p["system"], p["prompt"], int(p.get("max_tokens", 2000)))}
+        wk = Worker(RemoteQueue(args.server, args.token), handlers, args.capabilities.split(","), args.location)
+        print(f"worker {wk.node_id} serving {sorted(handlers)} for {args.server}")
+        wk.run_forever()
         return 0
     ctl = SecurityController()
     if args.cmd == "status":
