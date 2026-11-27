@@ -76,8 +76,11 @@ CREATE TABLE IF NOT EXISTS missions (
 
 class MissionRunner:
     def __init__(self, ctl: SecurityController, memory: MemoryStore, llm: Any, db_path: Path,
-                 skills: Any = None, limits: Optional[MissionLimits] = None, config: Any = None):
+                 skills: Any = None, limits: Optional[MissionLimits] = None, config: Any = None,
+                 workspace: Optional[Path] = None):
         self.ctl, self.mem, self.llm, self.skills, self.cfg = ctl, memory, llm, skills, config
+        import os
+        self.workspace = Path(workspace or os.environ.get("FUSION_OS_WORKSPACE") or Path.cwd())
         self.limits = limits or MissionLimits()
         self.tools: dict[str, Tool] = {}
         self.conn = SafeConn(db_path)
@@ -94,11 +97,44 @@ class MissionRunner:
     def _register_builtin_tools(self) -> None:
         self.register_tool(Tool("think", "llm.chat", "Reason, draft, summarise or write text. inputs: {task}",
                                 lambda i, c: self.llm.complete(SYSTEM["worker"], self._worker_prompt(i, c))))
+        self.register_tool(Tool("list_files", "files.read", "List files in the workspace folder. inputs: {path (optional subfolder)}",
+                                lambda i, c: self._list_files(str(i.get("path", "")))))
+        self.register_tool(Tool("read_file", "files.read", "Read a text file from the workspace folder. inputs: {path}",
+                                lambda i, c: self._read_file(str(i.get("path", ""))), untrusted_output=True))
         self.register_tool(Tool("memory_search", "memory.read", "Search long-term memory. inputs: {query}",
                                 lambda i, c: [r.for_prompt() for r in self.mem.search(str(i.get("query", "")), k=6)]))
         self.register_tool(Tool("remember", "memory.write", "Store a fact for later. inputs: {fact}",
                                 lambda i, c: self.mem.write(str(i["fact"]), source=f"mission:{c['mission_id']}",
                                                             trust="agent", mission_id=c["mission_id"]).id))
+
+    def _ws_path(self, rel: str) -> Path:
+        root = self.workspace.resolve()
+        p = (root / rel.replace("\\", "/").lstrip("/")).resolve()
+        if p != root and root not in p.parents:
+            raise PermissionError("path is outside the workspace")
+        return p
+
+    def _list_files(self, rel: str) -> list[str]:
+        p = self._ws_path(rel)
+        skip = {".git", ".venv", "node_modules", "__pycache__"}
+        out = []
+        for f in sorted(p.rglob("*")):
+            if any(part in skip for part in f.relative_to(p).parts):
+                continue
+            if f.is_file():
+                out.append(f.relative_to(self.workspace.resolve()).as_posix())
+            if len(out) >= 300:
+                break
+        return out
+
+    def _read_file(self, rel: str) -> str:
+        p = self._ws_path(rel)
+        if not p.is_file():
+            raise FileNotFoundError(rel)
+        data = p.read_bytes()[:200_000]
+        if b"\x00" in data[:4096]:
+            raise ValueError("binary files are not read")
+        return data.decode("utf-8", "replace")
 
     def _available_tools(self) -> dict[str, str]:
         out = {n: t.description for n, t in self.tools.items()}

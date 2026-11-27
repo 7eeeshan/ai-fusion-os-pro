@@ -8,6 +8,7 @@ be rolled back to the previous model.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 import statistics
@@ -101,7 +102,7 @@ class ModelManager:
             passed += ok
             details.append({"prompt": c["prompt"][:120], "ok": ok, "seconds": round(dt, 3), "output": out[:300]})
         res = {"suite": suite.name, "provider": provider, "model": model, "accuracy": passed / len(suite.cases),
-               "mean_latency": statistics.mean(lat), "p95_latency": sorted(lat)[max(0, int(len(lat) * 0.95) - 1)],
+               "mean_latency": statistics.mean(lat), "p95_latency": sorted(lat)[max(0, math.ceil(len(lat) * 0.95) - 1)],
                "chars_per_s": chars / sum(lat) if sum(lat) else 0.0, "errors": errors}
         self.conn.execute("INSERT INTO bench(suite, provider, model, accuracy, mean_latency, p95_latency, chars_per_s, errors, details, at) "
                           "VALUES (?,?,?,?,?,?,?,?,?,?)", (suite.name, provider, model, res["accuracy"], res["mean_latency"],
@@ -120,10 +121,13 @@ class ModelManager:
         cur_cfg = self.deployed(role)
         if not cur_cfg:
             return {"recommend": True, "reason": "no model deployed for this role", "candidate": cand, "current": None}
+        if cur_cfg == {"provider": candidate["provider"], "model": candidate["model"]}:
+            return {"recommend": False, "reason": "candidate is the deployed model", "candidate": cand, "current": None}
         cur = self.run(suite, cur_cfg["provider"], cur_cfg["model"])
         if cand["accuracy"] >= cur["accuracy"] + min_gain:
             why, rec = f"accuracy {cand['accuracy']:.0%} vs {cur['accuracy']:.0%}", True
-        elif cand["accuracy"] >= cur["accuracy"] and cand["mean_latency"] <= 0.8 * cur["mean_latency"]:
+        elif cand["accuracy"] >= cur["accuracy"] and cur["mean_latency"] >= 0.05 and \
+                cand["mean_latency"] <= 0.8 * cur["mean_latency"]:
             why, rec = f"same accuracy, {cur['mean_latency'] / max(cand['mean_latency'], 1e-9):.1f}x faster", True
         else:
             why, rec = "no measured improvement", False
