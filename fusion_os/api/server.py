@@ -34,7 +34,7 @@ from ..ops import BackupManager, HealthMonitor, ImprovementLab
 from ..cloud import JobQueue, Worker
 from ..cloud.llm_bridge import QueueLLM
 from ..skills import SkillManager
-from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
+from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable, make_sandbox
 from ..sandbox.docker import SandboxError
 from ..security.controller import SecurityController
 from ..security.engagements import Engagement
@@ -224,7 +224,7 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
                secops: Optional[SecOpsService] = None, web: Optional[SurfaceWeb] = None,
                tor: Optional[TorResearch] = None) -> FastAPI:
     ctl = controller or SecurityController()
-    sbx = sandbox or DockerSandbox()
+    sbx = sandbox or make_sandbox(generic=True)
     eng = engine or EngineLink()
     mem = memory or MemoryStore(paths.home() / "memory.db")
     skm = skills or SkillManager(ctl, paths.home() / "skills")
@@ -435,7 +435,7 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         except SandboxUnavailable as exc:
             raise HTTPException(503, str(exc))
 
-    health = HealthMonitor(ctl, memory=mem, missions=mis, sandbox=sbx, engine=eng, data_dir=paths.home())
+    health = HealthMonitor(ctl, memory=mem, missions=mis, sandbox=skm.sandbox, engine=eng, data_dir=paths.home())
     backups = BackupManager(paths.home(), ctl)
     lab = ImprovementLab(ctl, cfg, paths.home() / "proposals.db", _evaluate, post_check=lambda: health.check()["ok"])
     mis.cfg = cfg
@@ -779,7 +779,11 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
 
     @app.get("/admin/status", dependencies=[Depends(admin)])
     def status():
-        return {**ctl.status(), "sandbox": dict(zip(("available", "detail"), sbx.available())),
+        sk = skm.sandbox
+        return {**ctl.status(),
+                "sandbox": {**dict(zip(("available", "detail"), sk.available())),
+                            "isolation": getattr(sk, "isolation", "docker"),
+                            "raw_exec": dict(zip(("available", "detail"), sbx.available()))},
                 "engine_link": eng.status()}
 
     @app.get("/admin/approvals", dependencies=[Depends(admin)])

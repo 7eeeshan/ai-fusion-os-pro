@@ -42,6 +42,8 @@ class SandboxSpec:
     workdir_writable: bool = False
     env: dict[str, str] = field(default_factory=dict)
     stdin: Optional[str] = None
+    # Process sandbox only: the one host:port the child may connect to (the local Tor SOCKS port). Docker ignores it.
+    allow_connect: Optional[tuple[str, int]] = None
 
 
 @dataclass
@@ -59,6 +61,8 @@ class SandboxResult:
 
 
 class DockerSandbox:
+    isolation = "docker"
+
     def __init__(self, allowed_images: tuple[str, ...] | list[str] = DEFAULT_IMAGES, docker_bin: Optional[str] = None,
                  workroot: Optional[Path] = None, max_output: int = 1_000_000):
         self.allowed_images = tuple(allowed_images)

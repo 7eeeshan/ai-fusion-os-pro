@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
+from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable, make_sandbox
 from ..security.controller import SecurityController, Verdict
 from ..security.policy import ActionRequest
 
@@ -111,7 +111,7 @@ class SkillManager:
         self.ctl = controller
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.sandbox = sandbox or DockerSandbox(allowed_images=(IMAGE,), workroot=self.root)
+        self.sandbox = sandbox or make_sandbox(allowed_images=(IMAGE,), workroot=self.root)
         if self.sandbox.workroot is None:
             self.sandbox.workroot = self.root
         self.index_file = self.root / "index.json"
