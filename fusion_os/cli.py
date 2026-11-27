@@ -17,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     dk = sub.add_parser("desktop", help="run the backend for the desktop app (loopback only, single instance)")
     dk.add_argument("--port", type=int, default=8790)
     dk.add_argument("--open", action="store_true", help="open the dashboard in the default browser")
+    sub.add_parser("desktop-stop", help="stop a running desktop backend")
     sub.add_parser("status")
     sub.add_parser("admin-token")
     a = sub.add_parser("add-agent")
@@ -48,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "desktop":
         from . import desktop
         return desktop.run(args.port, args.open)
+    if args.cmd == "desktop-stop":
+        from . import desktop
+        return 0 if desktop.stop_running() else 1
     if args.cmd == "worker":
         from .cloud.worker import RemoteQueue, Worker
         from .llm import EngineLLM

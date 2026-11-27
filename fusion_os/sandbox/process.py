@@ -56,7 +56,10 @@ class ProcessSandbox:
     def __init__(self, allowed_images: tuple[str, ...] | list[str] = DEFAULT_IMAGES, python: Optional[str] = None,
                  workroot: Optional[Path] = None, max_output: int = 1_000_000):
         self.allowed_images = tuple(allowed_images)
-        self.python = python or os.environ.get("FUSION_OS_SANDBOX_PYTHON") or sys.executable
+        # In a Windows venv, sys.executable is a launcher that starts the real interpreter as a child, which the
+        # one-process job limit would refuse; the sandbox needs only the standard library, so use the base one.
+        default = getattr(sys, "_base_executable", None) if os.name == "nt" else None
+        self.python = python or os.environ.get("FUSION_OS_SANDBOX_PYTHON") or default or sys.executable
         self.workroot = workroot.resolve() if workroot else None
         self.max_output = max_output
 

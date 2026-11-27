@@ -101,7 +101,9 @@ def test_desktop_backend_end_to_end(tmp_path):
         second = subprocess.run([sys.executable, "-m", "fusion_os", "desktop", "--port", "0"], env=env,
                                 capture_output=True, text=True, timeout=60)
         assert second.returncode == 3 and json.loads(second.stdout)["port"] == port
-        assert httpx.post(base + "/desktop/shutdown", json={"launch": info["launch"]}).json()["ok"]
+        stop = subprocess.run([sys.executable, "-m", "fusion_os", "desktop-stop"], env=env, capture_output=True,
+                              timeout=60)
+        assert stop.returncode == 0, stop.stderr
         assert p.wait(30) == 0
         assert not (home / "security" / "desktop.json").exists()
     finally:

@@ -1,0 +1,7 @@
+AI Fusion OS Pro - portable edition
+
+Run "AI Fusion OS Pro.exe". Nothing is installed: the backend (embedded Python) and Tor are in the folders next to
+it. Your data is kept in %LOCALAPPDATA%\AIFusionOSPro, the same place the installed edition uses, so you can switch
+between them. Microsoft Edge WebView2 must be present (it is on Windows 11).
+
+Closing the window keeps agents running in the tray. Use the tray icon's "Quit" to stop them.

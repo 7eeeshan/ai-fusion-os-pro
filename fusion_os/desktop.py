@@ -192,6 +192,8 @@ class InstanceLock:
 def pick_port(preferred: int, host: str = "127.0.0.1") -> int:
     for port in (preferred, 0):
         with socket.socket() as s:
+            if os.name != "nt":  # match uvicorn, so a restart after a crash gets the same port despite TIME_WAIT
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind((host, port))
             except OSError:
@@ -226,6 +228,22 @@ class DesktopSession:
         self.stop_requested = True
         if self.server is not None:
             self.server.should_exit = True
+
+
+def stop_running(wait_s: float = 20) -> bool:
+    """Ask a running desktop backend to shut down (used by the installer before an upgrade or uninstall)."""
+    import httpx
+    info = read_info()
+    if not info:
+        return False
+    try:
+        httpx.post(f"http://127.0.0.1:{info['port']}/desktop/shutdown", json={"launch": info["launch"]}, timeout=5)
+    except httpx.HTTPError:
+        return False
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < wait_s and info_path().exists():
+        time.sleep(0.25)
+    return not info_path().exists()
 
 
 def run(port: int = 8790, open_browser: bool = False) -> int:
