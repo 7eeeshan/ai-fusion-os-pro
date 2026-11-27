@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal, Optional
 
+from ..db import SafeConn
 from ..security.untrusted import UntrustedContent, scan
 
 Kind = Literal["semantic", "episodic", "procedural"]
@@ -125,9 +126,7 @@ def _cos(a: list[float], b: list[float]) -> float:
 class MemoryStore:
     def __init__(self, path: Path, embedder: Optional[Embedder] = None):
         self.lock = threading.RLock()
-        self.conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn = SafeConn(path)
         self.conn.executescript(SCHEMA)
         self.embedder = embedder
 

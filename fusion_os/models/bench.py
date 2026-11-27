@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..db import SafeConn
 from ..config_store import ConfigStore
 from ..security.controller import SecurityController
 from ..security.policy import ActionRequest
@@ -62,8 +63,7 @@ BUILTIN_SUITES = {
 class ModelManager:
     def __init__(self, ctl: SecurityController, config: ConfigStore, db: Path, providers: dict[str, Provider]):
         self.ctl, self.cfg, self.providers = ctl, config, providers
-        self.conn = sqlite3.connect(str(db), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(db)
         self.conn.execute("CREATE TABLE IF NOT EXISTS bench (id INTEGER PRIMARY KEY AUTOINCREMENT, suite TEXT, provider TEXT, "
                           "model TEXT, accuracy REAL, mean_latency REAL, p95_latency REAL, chars_per_s REAL, errors INTEGER, "
                           "details TEXT, at REAL)")

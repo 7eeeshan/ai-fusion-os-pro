@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..db import SafeConn
 from ..llm import LLMUnavailable, extract_json
 from ..memory import MemoryStore
 from ..security.controller import SecurityController
@@ -79,8 +80,7 @@ class MissionRunner:
         self.ctl, self.mem, self.llm, self.skills, self.cfg = ctl, memory, llm, skills, config
         self.limits = limits or MissionLimits()
         self.tools: dict[str, Tool] = {}
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(db_path)
         self.conn.executescript(SCHEMA)
         self.lock = threading.RLock()
         self._agents: dict[str, dict] = {}
@@ -165,7 +165,11 @@ class MissionRunner:
         return self.llm.complete(system, prompt)
 
     # ---------- public ----------
-    def start(self, goal: str, requested_by: str = "admin", background: bool = True) -> str:
+    def create(self, goal: str, requested_by: str = "admin") -> str:
+        """Record a mission without running it (queue mode: a worker runs it)."""
+        return self.start(goal, requested_by, background=None)
+
+    def start(self, goal: str, requested_by: str = "admin", background: Optional[bool] = True) -> str:
         if not goal.strip():
             raise ValueError("goal is empty")
         mid = "mis_" + secrets.token_hex(6)
@@ -175,6 +179,8 @@ class MissionRunner:
                               (mid, goal.strip(), "planning", now, now, requested_by))
         self.ctl.budgets.set(mid, self.limits.max_calls, self.limits.max_seconds, self.limits.max_usd)
         self.ctl.audit.append(requested_by, "mission.start", {"mission_id": mid, "goal": goal[:500]})
+        if background is None:
+            return mid
         if background:
             t = threading.Thread(target=self.run, args=(mid,), daemon=True, name=mid)
             self._threads[mid] = t
@@ -186,12 +192,14 @@ class MissionRunner:
     def stop(self, mid: str) -> None:
         self._upd(mid, status="stopping")
 
-    def resume(self, mid: str, background: bool = True) -> None:
+    def resume(self, mid: str, background: Optional[bool] = True) -> None:
         """Continue a mission that was waiting (e.g. on a skill approval)."""
         m = self.get(mid)
         if not m or m["status"] != "waiting":
             raise ValueError("mission is not waiting")
         self._upd(mid, status="planning", waiting_on=None)
+        if background is None:
+            return
         if background:
             threading.Thread(target=self.run, args=(mid,), daemon=True).start()
         else:

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Fusion OS Pro · Mission Control</title>
+<style>
+:root{--bg:#0e1116;--panel:#161b22;--line:#2a313c;--text:#e6edf3;--mute:#8b949e;--acc:#4c8dff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+nav{width:250px;background:var(--panel);border-right:1px solid var(--line);padding:12px 0;flex-shrink:0}
+nav h1{font-size:15px;margin:4px 16px 12px}nav a{display:block;padding:7px 16px;color:var(--mute);text-decoration:none;cursor:pointer}
+nav a.on,nav a:hover{color:var(--text);background:#1f2630}main{flex:1;padding:20px 28px;overflow:auto}
+h2{margin:0 0 14px;font-size:20px}h3{font-size:15px;margin:22px 0 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.kpi b{display:block;font-size:22px}.kpi span{color:var(--mute);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:500}td pre{margin:0;white-space:pre-wrap;max-height:160px;overflow:auto}
+.pill{padding:1px 8px;border-radius:10px;font-size:12px;background:#222a35}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.critical,.high{color:var(--bad)}.medium{color:var(--warn)}.low{color:#79c0ff}.info{color:var(--mute)}
+input,select,textarea{background:#0d1117;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+textarea{width:100%;min-height:90px}button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit}
+button.sec{background:#30363d}button.danger{background:var(--bad)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+#msg{position:fixed;bottom:16px;right:16px;max-width:460px;background:#1f2630;border:1px solid var(--line);padding:10px 14px;border-radius:8px;display:none;white-space:pre-wrap}
+.mute{color:var(--mute)}svg text{fill:var(--text);font-size:11px}
+</style></head><body>
+<nav id="nav"><h1>AI Fusion OS Pro</h1></nav>
+<main id="main"><h2>Sign in</h2><div class="card"><p>Paste the admin token (<code>python -m fusion_os admin-token</code>). It is kept only in this browser tab.</p>
+<div class="row"><input id="tok" type="password" size="60"><button onclick="login()">Open mission control</button></div></div></main>
+<div id="msg"></div>
+<script>
+const S=sessionStorage;let ADM=S.getItem("adm"),AG=S.getItem("ag");
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $=id=>document.getElementById(id);
+function toast(t){const m=$("msg");m.textContent=typeof t==="string"?t:JSON.stringify(t,null,2);m.style.display="block";clearTimeout(m._t);m._t=setTimeout(()=>m.style.display="none",7000)}
+async function api(path,opt={},asAgent=false){const h={"Authorization":"Bearer "+(asAgent?AG:ADM)};if(opt.body&&typeof opt.body!=="string"){opt.body=JSON.stringify(opt.body);h["Content-Type"]="application/json"}
+ const r=await fetch(path,{...opt,headers:{...h,...(opt.headers||{})}});const ct=r.headers.get("content-type")||"";const d=ct.includes("json")?await r.json():await r.text();
+ if(!r.ok){toast((d&&d.detail)?d.detail:d);throw new Error(r.status)}return d}
+async function login(){ADM=$("tok").value.trim();try{await api("/admin/status")}catch(e){return}
+ const a=await api("/admin/agents",{method:"POST",body:{agent_id:"dashboard",zones:["research","security","standard"]}});AG=a.token;S.setItem("adm",ADM);S.setItem("ag",AG);boot()}
+const t=x=>x?new Date(x*1000).toLocaleString():"";
+function table(rows,cols,fmt={}){if(!rows||!rows.length)return'<p class="mute">Nothing yet.</p>';
+ return"<table><tr>"+cols.map(c=>`<th>${esc(c)}</th>`).join("")+"</tr>"+rows.map(r=>"<tr>"+cols.map(c=>`<td>${fmt[c]?fmt[c](r[c],r):esc(typeof r[c]==="object"?JSON.stringify(r[c]):r[c])}</td>`).join("")+"</tr>").join("")+"</table>"}
+const sev=v=>`<span class="${esc(v)}">${esc(v)}</span>`,okb=v=>v?'<span class="ok">ok</span>':'<span class="bad">fail</span>';
+const V={
+ overview:["Overview",async()=>{const [s,h,q]=await Promise.all([api("/admin/status"),api("/admin/health"),api("/admin/queue")]);
+  return`<div class="grid">${[["Emergency stop",s.emergency_stop?'<span class="bad">ACTIVE</span>':'<span class="ok">off</span>'],["Policy",okb(s.policy_ok)+" v"+esc(s.policy_version)],["Audit chain",okb(s.audit.ok)+" "+s.audit.entries+" entries"],["Pending approvals",s.pending_approvals],["Sandbox",okb(s.sandbox.available)],["AI Fusion Engine",s.engine_link.connected?'<span class="ok">connected</span>':'<span class="mute">not connected</span>'],["Queue",esc(JSON.stringify(q.stats.by_status))],["Live nodes",q.nodes.filter(n=>n.alive).length]].map(([k,v])=>`<div class="card kpi"><span>${k}</span><b>${v}</b></div>`).join("")}</div>
+  <h3>Health advice</h3><div class="card">${h.advice.length?h.advice.map(a=>`<p>• ${esc(a)}</p>`).join(""):'<p class="ok">All checks pass.</p>'}</div>
+  <h3>Start a mission</h3><div class="card"><textarea id="goal" placeholder="Describe the goal"></textarea><div class="row"><button onclick="startMission()">Start mission</button></div></div>
+  <h3>Missions</h3><div class="card" id="mlist"></div>`},async()=>{const m=await api("/admin/missions");$("mlist").innerHTML=table(m,["id","goal","status","error","updated"],{updated:t,id:v=>`<a href="#" onclick="showMission('${esc(v)}');return false">${esc(v)}</a>`})}],
+ soc:["Cybersecurity operations center",async()=>{const [a,f,r]=await Promise.all([api("/admin/secops/alerts"),api("/admin/secops/findings?status=open"),api("/admin/secops/runs")]);
+  return`<div class="grid">${["critical","high","medium","low"].map(s=>`<div class="card kpi"><span>Open ${s}</span><b class="${s}">${f.filter(x=>x.severity===s).length}</b></div>`).join("")}<div class="card kpi"><span>IDS alerts</span><b>${a.alerts.length}</b></div></div>
+  <h3>Recent tool runs</h3><div class="card">${table(r.slice(0,20),["id","tool","target","exit_code","findings","started"],{started:t})}</div>
+  <h3>Top alert signatures</h3><div class="card">${table(a.top_signatures.map(([s,n])=>({signature:s,count:n})),["signature","count"])}</div>`}],
+ testing:["Authorized security testing",async()=>{const [e,tools]=await Promise.all([api("/admin/engagements"),api("/v1/secops/tools",{},true)]);
+  return`<div class="card"><h3>New engagement</h3><div class="row"><input id="en" placeholder="Name"><input id="eb" placeholder="Authorized by (owner)"><input id="er" placeholder="Authorization ref (SOW/letter)"></div>
+  <div class="row"><input id="et" size="40" placeholder="Targets: 10.0.0.0/24, app.example.com"><input id="ex" placeholder="Exclusions"><input id="etl" placeholder="Tools: nmap,nuclei"><input id="ed" type="number" value="7" style="width:70px"> days</div>
+  <div class="row"><button onclick="newEng()">Create engagement</button></div></div>
+  <h3>Engagements</h3><div class="card">${table(e,["id","name","authorized_by","authorization_ref","targets","allowed_tools","ends_at","requests_used","revoked"],{ends_at:t})}</div>
+  <div class="card"><h3>Run a tool</h3><div class="row"><select id="rt">${tools.map(x=>`<option>${esc(x.name)}</option>`).join("")}</select><input id="re" placeholder="engagement id"><input id="rtg" placeholder="target"><input id="rf" placeholder="analysis folder (code/malware)"><button onclick="runTool()">Run</button></div><p class="mute">Runs only if the target is in scope and the tool is authorized. Results appear in Vulnerability management.</p></div>`}],
+ vulns:["Vulnerability management",async()=>{const f=await api("/admin/secops/findings");const e=await api("/admin/engagements");
+  return`<div class="card row">Report: <select id="rep">${e.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}</select><button onclick="report()">Generate report</button></div>
+  <div class="card">${table(f,["severity","title","target","tool","status","owasp","attack","remediation","id"],{severity:sev,id:(v)=>`<select onchange="setFinding('${esc(v)}',this.value)"><option>change…</option>${["open","verified","fixed","false_positive","accepted_risk"].map(s=>`<option>${s}</option>`).join("")}</select>`})}</div><pre id="reportout" class="card" style="white-space:pre-wrap;display:none"></pre>`}],
+ threat:["Threat intelligence",async()=>{const [a,d]=await Promise.all([api("/admin/secops/alerts"),api("/admin/research/evidence?darkweb=true")]);
+  return`<div class="card"><h3>Ingest Suricata EVE JSON</h3><textarea id="eve" placeholder="paste eve.json lines"></textarea><button onclick="ingest()">Ingest</button></div>
+  <h3>IDS alerts</h3><div class="card">${table(a.alerts,["ts","severity","signature","src","dest","category","attack"],{severity:sev})}</div>
+  <h3>Dark-web evidence (isolated zone)</h3><div class="card">${table(d,["fetched","url","title","categories","flags","language","sha256"],{fetched:t})}</div>`}],
+ research:["Deep research workspace",async()=>{const ev=await api("/admin/research/evidence");const tor=await api("/admin/research/tor/status");
+  return`<div class="card"><div class="row"><input id="rq" size="50" placeholder="search query"><button onclick="search('search')">Web search</button><button class="sec" onclick="search('academic')">arXiv</button></div><div id="rres"></div></div>
+  <div class="card"><div class="row"><input id="ru" size="60" placeholder="https://…"><button onclick="fetchUrl()">Fetch as untrusted</button></div><pre id="fout" style="white-space:pre-wrap"></pre></div>
+  <div class="card">Tor zone: network isolated ${okb(tor.network_internal)} · gateway ${okb(tor.gateway_running)} <button class="sec" onclick="api('/admin/research/tor/setup',{method:'POST'}).then(toast)">Set up Tor zone</button>
+  <p class="mute">Onion fetches run only for agents whose identity is in the dark-web zone; that identity cannot reach memory, files, credentials or tools.</p></div>
+  <h3>Evidence</h3><div class="card">${table(ev,["fetched","url","title","categories","flags","injection","language"],{fetched:t})}</div>`}],
+ tech:["Technology discovery center",async()=>{const r=await api("/admin/intel");
+  return`<div class="card row"><button onclick="api('/admin/intel/scan',{method:'POST'}).then(x=>{toast(x);go('tech')})">Scan sources now</button><span class="mute">GitHub, PyPI, npm, OSV, Hugging Face, arXiv, MCP registry. Unscored criteria are left blank until measured.</span></div>
+  <div class="card">${table(r,["kind","name","version","license","status","overall","unscored","id"],{name:(v,x)=>`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(v)}</a>`,unscored:v=>esc(v.join(", ")),id:v=>`<select onchange="techStatus('${esc(v)}',this.value)"><option>set…</option>${["approved","rejected","deprecated","evaluated"].map(s=>`<option>${s}</option>`).join("")}</select>`})}</div>`}],
+ graph:["Knowledge graph",async()=>`<div class="card row"><input id="gn" placeholder="entity, e.g. nmap"><input id="gd" type="number" value="2" style="width:60px"><button onclick="drawGraph()">Show</button></div><div class="card"><svg id="gsvg" width="100%" height="520"></svg></div>`],
+ learning:["Agent learning history",async()=>{const m=await api("/admin/memory");
+  return`<div class="card">${table(m.stats.memories,["kind","status","trust","n"])}<p>Episodes: ${esc(JSON.stringify(m.stats.episodes))} · Graph edges: ${m.stats.graph_edges}</p></div>
+  <h3>Recurring unresolved failures</h3><div class="card">${table(m.recurring_failures,["error","n","last"],{last:t})}</div>
+  <h3>Memories</h3><div class="card">${table(m.records.slice(0,100),["kind","trust","status","content","source","id"],{content:v=>`<pre>${esc(v)}</pre>`,id:(v,x)=>x.status==="quarantined"?`<button onclick="memOp('${esc(v)}','release')">release</button>`:`<button class="sec" onclick="memOp('${esc(v)}','retract')">retract</button>`})}</div>`}],
+ skills:["Skill development laboratory",async()=>{const s=await api("/v1/skills",{},true);
+  return`<div class="card"><h3>Submit a skill</h3><p class="mute">JSON object of files: {"skill.json": "...", "main.py": "...", "test_main.py": "..."}. It is validated in the sandbox automatically.</p><textarea id="sf"></textarea><button onclick="submitSkill()">Validate</button><pre id="sout"></pre></div>
+  <div class="card">${table(s,["name","active","versions"],{versions:(v,x)=>Object.entries(v).map(([ver,d])=>`${esc(ver)}: ${esc(d.status)} ${d.status==="validated"?`<button onclick="regSkill('${esc(x.name)}','${esc(ver)}')">request approval</button>`:""}`).join("<br>")})}</div>`}],
+ models:["Model benchmarking",async()=>{const m=await api("/admin/models");
+  return`<div class="card">Deployed: <b>${esc(JSON.stringify(m.deployed))}</b> <button class="sec" onclick="api('/admin/models/rollback',{method:'POST'}).then(toast)">Roll back</button></div>
+  <div class="card row"><select id="mp"><option>engine</option><option>anthropic</option></select><input id="mm" placeholder="model id"><button onclick="bench('benchmark')">Benchmark</button><button class="sec" onclick="bench('compare')">Compare with deployed</button><button class="sec" onclick="deploy()">Deploy (needs approval)</button></div>
+  <h3>Discovered</h3><div class="card">${table(m.discovered,["provider","model","local","error"])}</div>
+  <h3>Results</h3><div class="card">${table(m.results,["at","provider","model","suite","accuracy","mean_latency","chars_per_s","errors"],{at:t,accuracy:v=>(v*100).toFixed(0)+"%",mean_latency:v=>v.toFixed(2)+"s",chars_per_s:v=>v.toFixed(0)})}</div>`}],
+ approvals:["Update approval center",async()=>{const [a,p]=await Promise.all([api("/admin/approvals?status=pending"),api("/admin/improvements")]);
+  return`<div class="card">${table(a,["created","agent_id","action","reason","request","id"],{created:t,request:v=>`<pre>${esc(JSON.stringify(v.params||{},null,1))}</pre>`,id:v=>`<button onclick="decide('${esc(v)}',true)">Approve</button> <button class="danger" onclick="decide('${esc(v)}',false)">Deny</button>`})}</div>
+  <h3>Improvement proposals</h3><div class="card">${table(p,["created","kind","key","rationale","status","baseline","score","id"],{created:t,id:(v,x)=>x.status==="proposed"?`<button onclick="api('/admin/improvements/${esc(v)}/validate',{method:'POST'}).then(r=>{toast(r);go('approvals')})">Benchmark</button>`:x.status==="validated"?`<button onclick="applyProp('${esc(v)}','${esc(x.approval_id||"")}')">Apply</button>`:""})}</div>`}],
+ security:["Security and permissions",async()=>{const [ag,pol,au]=await Promise.all([api("/admin/agents"),api("/admin/policy"),api("/admin/audit?limit=100")]);
+  return`<div class="card row"><button class="danger" onclick="api('/admin/emergency-stop',{method:'POST',body:{reason:'dashboard'}}).then(()=>go('security'))">EMERGENCY STOP</button><button class="sec" onclick="api('/admin/resume',{method:'POST'}).then(()=>go('security'))">Resume</button><button class="sec" onclick="api('/admin/audit/verify').then(toast)">Verify audit chain</button></div>
+  <h3>Agents</h3><div class="card">${table(ag,["agent_id","zones","revoked","created"],{created:t})}</div>
+  <h3>Policy</h3><div class="card"><p>SHA-256 ${esc(pol.sha256)} · ${okb(pol.ok)}</p>${table((pol.policy||{}).rules||[],["id","actions","zones","effect","requires_engagement","when"])}</div>
+  <h3>Audit log</h3><div class="card">${table(au,["seq","ts","actor","event","data"],{ts:t,data:v=>`<pre>${esc(JSON.stringify(v))}</pre>`})}</div>`}],
+ recovery:["System recovery and rollback",async()=>{const [b,c,s]=await Promise.all([api("/admin/backups"),api("/admin/config"),api("/v1/skills",{},true)]);
+  return`<div class="card row"><button onclick="api('/admin/backups',{method:'POST'}).then(()=>go('recovery'))">Create backup</button><button class="sec" onclick="api('/admin/health/heal',{method:'POST'}).then(toast)">Run safe self-healing</button></div>
+  <div class="card">${table(b,["name","bytes","name"],{name:v=>`${esc(v)} <button class="danger" onclick="if(confirm('Restore '+'${esc(v)}'+'? A safety backup is taken first.'))api('/admin/backups/${esc(v)}/restore',{method:'POST'}).then(toast)">restore</button>`})}</div>
+  <h3>Configuration history</h3><div class="card">${table(Object.entries(c).map(([k,h])=>({key:k,version:h[0].version,value:h[0].value,by:h[0].by})),["key","version","value","by"],{key:v=>`${esc(v)} <button class="sec" onclick="api('/admin/config/${esc(v)}/rollback',{method:'POST'}).then(()=>go('recovery'))">roll back</button>`})}</div>
+  <h3>Skills</h3><div class="card">${table(s,["name","active","previous"],{name:v=>`${esc(v)} <button class="sec" onclick="api('/admin/skills/${esc(v)}/rollback',{method:'POST'}).then(toast)">roll back</button>`})}</div>`}],
+ resources:["Cloud and local resources",async()=>{const r=await api("/admin/resources");const q=await api("/admin/queue");
+  return`<div class="grid">${Object.entries(r.this_node).map(([k,v])=>`<div class="card kpi"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div>
+  <h3>AI Fusion Engine Pro hardware</h3><div class="card"><pre>${esc(JSON.stringify(r.engine,null,1)||"not connected")}</pre></div>
+  <h3>Nodes</h3><div class="card">${table(r.nodes,["id","location","capabilities","alive","last_seen"],{last_seen:t,alive:okb})}</div>
+  <h3>Jobs</h3><div class="card">${table(q.recent,["updated","kind","status","lease_owner","attempts","error"],{updated:t})}</div>
+  <h3>Schedules</h3><div class="card">${table(q.schedules,["name","kind","interval_s","next_run","enabled"],{next_run:t})}</div><p class="mute">Last model call: ${esc(JSON.stringify(q.llm_last))}</p>`}],
+};
+let cur="overview";
+async function go(k){cur=k;document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.k===k));const [title,render,after]=V[k];
+ $("main").innerHTML=`<h2>${title}</h2><p class="mute">Loading…</p>`;try{$("main").innerHTML=`<h2>${title}</h2>`+await render();if(after)await after()}catch(e){$("main").innerHTML+=`<p class="bad">Could not load: ${esc(e.message)}</p>`}}
+function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
+async function startMission(){const r=await api("/admin/missions",{method:"POST",body:{goal:$("goal").value}});toast("Mission "+r.id+" started");go("overview")}
+async function showMission(id){const m=await api("/admin/missions/"+id);toast({status:m.status,error:m.error,waiting_on:m.waiting_on,final:m.result&&m.result.final,log:(m.log||[]).slice(-8)})}
+async function newEng(){const sp=s=>s.split(",").map(x=>x.trim()).filter(Boolean);const now=Date.now()/1000;
+ await api("/admin/engagements",{method:"POST",body:{name:$("en").value,authorized_by:$("eb").value,authorization_ref:$("er").value,targets:sp($("et").value),exclusions:sp($("ex").value),allowed_tools:sp($("etl").value),starts_at:now,ends_at:now+86400*+$("ed").value}});go("testing")}
+async function runTool(){toast("Running… this can take a few minutes");const r=await api("/v1/secops/run",{method:"POST",body:{tool:$("rt").value,engagement_id:$("re").value||null,target:$("rtg").value,folder:$("rf").value||null}},true);toast(r.verdict.allowed?`${r.findings.length} findings`:r.verdict.reason)}
+async function report(){const md=await api("/admin/secops/report/"+$("rep").value);const o=$("reportout");o.style.display="block";o.textContent=md}
+async function setFinding(id,s){await api("/admin/secops/findings/"+id,{method:"PUT",body:{status:s}});go("vulns")}
+async function ingest(){const r=await api("/admin/secops/alerts/suricata",{method:"POST",body:$("eve").value,headers:{"Content-Type":"text/plain"}});toast(r);go("threat")}
+async function search(kind){const r=await api(`/v1/research/${kind}?q=`+encodeURIComponent($("rq").value),{},true);$("rres").innerHTML=table(r,["title","url","snippet","published"])}
+async function fetchUrl(){const r=await api("/v1/research/fetch",{method:"POST",body:{url:$("ru").value}},true);$("fout").textContent=JSON.stringify({title:r.title,categories:r.categories,flags:r.flags,injection:r.injection,language:r.language},null,1)+"\n\n"+r.content.slice(0,5000)}
+async function techStatus(id,s){await api(`/admin/intel/${id}/status`,{method:"PUT",body:{status:s}});go("tech")}
+async function memOp(id,op){await api(`/admin/memory/${id}/${op}`,{method:"POST"});go("learning")}
+async function submitSkill(){let files;try{files=JSON.parse($("sf").value)}catch(e){return toast("Not valid JSON")}const r=await api("/v1/skills/submit",{method:"POST",body:{files}},true);$("sout").textContent=JSON.stringify(r,null,1);go("skills")}
+async function regSkill(n,v){const r=await api(`/v1/skills/${n}/${v}/register`,{method:"POST",body:{}},true);toast(r.allowed?"Registered":"Approval requested: "+r.approval_id+". Approve it in the Update approval center, then press again.")}
+async function bench(kind){toast("Running benchmark…");const r=await api("/admin/models/"+kind,{method:"POST",body:{provider:$("mp").value,model:$("mm").value}});toast(kind==="compare"?{recommend:r.recommend,reason:r.reason}:{accuracy:r.accuracy,mean_latency:r.mean_latency});go("models")}
+async function deploy(){const r=await api("/admin/models/deploy",{method:"POST",body:{provider:$("mp").value,model:$("mm").value}});toast(r.allowed?"Deployed":"Approval "+r.approval_id+" requested")}
+async function decide(id,ok){await api("/admin/approvals/"+id,{method:"POST",body:{approve:ok}});go("approvals")}
+async function applyProp(id,aid){const r=await api(`/admin/improvements/${id}/apply`,{method:"POST",body:{approval_id:aid||null}});toast(r);go("approvals")}
+async function drawGraph(){const g=await api(`/v1/memory/graph?node=${encodeURIComponent($("gn").value)}&depth=${$("gd").value}`,{},true);const svg=$("gsvg"),W=svg.clientWidth||900,H=520,n=g.nodes.length;
+ const pos={};g.nodes.forEach((x,i)=>{const a=2*Math.PI*i/Math.max(n,1),r=i===0?0:Math.min(W,H)/2.6;pos[x]=[W/2+r*Math.cos(a),H/2+r*Math.sin(a)]});
+ svg.innerHTML=g.edges.map(e=>{const [x1,y1]=pos[e.subject],[x2,y2]=pos[e.object];return`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3b4656"/><text x="${(x1+x2)/2}" y="${(y1+y2)/2}" fill="#8b949e">${esc(e.predicate)}</text>`}).join("")+
+ g.nodes.map(x=>`<circle cx="${pos[x][0]}" cy="${pos[x][1]}" r="6" fill="#4c8dff"/><text x="${pos[x][0]+9}" y="${pos[x][1]+4}">${esc(x)}</text>`).join("")}
+if(ADM&&AG)boot();
+</script></body></html>

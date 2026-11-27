@@ -7,6 +7,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+from ..db import SafeConn
 from typing import Any, Optional
 
 CRITERIA = ("functionality", "reliability", "security", "licensing", "hardware", "compatibility", "performance",
@@ -17,8 +18,7 @@ STATUSES = ("available", "evaluated", "approved", "rejected", "deprecated")
 class TechRegistry:
     def __init__(self, path: Path):
         self.lock = threading.RLock()
-        self.conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(path)
         self.conn.execute("CREATE TABLE IF NOT EXISTS tech (id TEXT PRIMARY KEY, kind TEXT, name TEXT, source TEXT, url TEXT, "
                           "version TEXT, license TEXT, status TEXT, scores TEXT, facts TEXT, notes TEXT, discovered REAL, updated REAL)")
 

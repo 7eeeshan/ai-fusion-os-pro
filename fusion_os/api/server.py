@@ -8,6 +8,7 @@ Binds to 127.0.0.1 by default.
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Optional
 
@@ -30,6 +31,8 @@ from ..llm import AnthropicLLM, EngineLLM
 from ..models import ModelManager
 from ..models.bench import BUILTIN_SUITES, BenchmarkSuite
 from ..ops import BackupManager, HealthMonitor, ImprovementLab
+from ..cloud import JobQueue, Worker
+from ..cloud.llm_bridge import QueueLLM
 from ..skills import SkillManager
 from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
 from ..sandbox.docker import SandboxError
@@ -189,6 +192,26 @@ class ApplyBody(BaseModel):
     approval_id: Optional[str] = None
 
 
+class LeaseBody(BaseModel):
+    node_id: str = Field(pattern=r"^[a-zA-Z0-9_.-]{2,64}$")
+    capabilities: list[str] = Field(default_factory=list)
+    location: str = "local"
+
+
+class JobResultBody(BaseModel):
+    node_id: str
+    result: Any = None
+    error: str = ""
+
+
+class ScheduleBody(BaseModel):
+    name: str
+    kind: str
+    payload: dict = Field(default_factory=dict)
+    interval_s: float = Field(ge=60)
+    requires: list[str] = Field(default_factory=list)
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -205,7 +228,13 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     eng = engine or EngineLink()
     mem = memory or MemoryStore(paths.home() / "memory.db")
     skm = skills or SkillManager(ctl, paths.home() / "skills")
-    mis = missions or MissionRunner(ctl, mem, Router(), paths.home() / "missions.db", skills=skm)
+    import os
+    queue = JobQueue(paths.home() / "queue.db")
+    order = [p.strip() for p in os.environ.get("FUSION_OS_LLM_ORDER", "engine,queue,anthropic").split(",") if p.strip()]
+    table = {"engine": lambda: EngineLLM(eng), "queue": lambda: QueueLLM(queue), "anthropic": lambda: AnthropicLLM()}
+    router = Router([table[p]() for p in order if p in table])
+    mis = missions or MissionRunner(ctl, mem, router, paths.home() / "missions.db", skills=skm)
+    queue_mode = os.environ.get("FUSION_OS_MISSION_MODE", "thread") == "queue"
     sec = secops or SecOpsService(ctl, paths.home() / "secops.db", paths.home() / "analysis")
     wb = web or SurfaceWeb(ctl, EvidenceStore(paths.home() / "evidence.db"), translator=Router())
     cfg = ConfigStore(paths.home() / "config.db")
@@ -255,6 +284,15 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         if a is None:
             raise HTTPException(401, "valid agent token required")
         return a
+
+    @app.get("/dashboard", include_in_schema=False)
+    def dashboard():
+        from fastapi.responses import HTMLResponse
+        from importlib import resources as _r
+        html = _r.files("fusion_os.api").joinpath("dashboard.html").read_text(encoding="utf-8")
+        return HTMLResponse(html, headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; "
+                                           "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
+                                           "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
 
     @app.get("/health")
     def health():
@@ -401,6 +439,76 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     backups = BackupManager(paths.home(), ctl)
     lab = ImprovementLab(ctl, cfg, paths.home() / "proposals.db", _evaluate, post_check=lambda: health.check()["ok"])
     mis.cfg = cfg
+
+    # ----- cloud queue -----
+    handlers = {
+        "mission.run": lambda p: (mis.run(p["mission_id"]), mis.get(p["mission_id"])["status"])[1],
+        "techintel.scan": lambda p: intel().scan(p.get("watchlist") or cfg.get("intel.watchlist")),
+        "health.heal": lambda p: health.heal(),
+        "health.check": lambda p: health.check()["ok"],
+        "backup.create": lambda p: backups.create(p.get("label", "scheduled"), "scheduler"),
+    }
+    app.state.queue = queue
+    app.state.handlers = handlers
+    if os.environ.get("FUSION_OS_WORKER", "0") == "1":
+        caps = [c for c in os.environ.get("FUSION_OS_CAPABILITIES", "docker").split(",") if c]
+        w = Worker(queue, handlers, caps, os.environ.get("FUSION_OS_LOCATION", "cloud"))
+        threading.Thread(target=w.run_forever, daemon=True, name="worker").start()
+        app.state.worker = w
+    if os.environ.get("FUSION_OS_SCHEDULER", "0") == "1":
+        queue.schedule("tech-intel-daily", "techintel.scan", {}, 86400)
+        queue.schedule("health-heal-5min", "health.heal", {}, 300)
+        queue.schedule("backup-daily", "backup.create", {"label": "daily"}, 86400)
+
+        def _tick():
+            while True:
+                queue.tick()
+                time.sleep(30)
+        threading.Thread(target=_tick, daemon=True, name="scheduler").start()
+
+    @app.post("/v1/queue/lease")
+    def q_lease(body: LeaseBody, a: dict = Depends(agent)):
+        return {"job": queue.lease(f"{a['agent_id']}:{body.node_id}", body.capabilities, body.location)}
+
+    @app.post("/v1/queue/{job_id}/heartbeat")
+    def q_beat(job_id: str, body: JobResultBody, a: dict = Depends(agent)):
+        return {"ok": queue.heartbeat(job_id, f"{a['agent_id']}:{body.node_id}")}
+
+    @app.post("/v1/queue/{job_id}/complete")
+    def q_complete(job_id: str, body: JobResultBody, a: dict = Depends(agent)):
+        return {"ok": queue.complete(job_id, f"{a['agent_id']}:{body.node_id}", body.result)}
+
+    @app.post("/v1/queue/{job_id}/fail")
+    def q_fail(job_id: str, body: JobResultBody, a: dict = Depends(agent)):
+        return {"ok": queue.fail(job_id, f"{a['agent_id']}:{body.node_id}", body.error)}
+
+    @app.get("/admin/queue", dependencies=[Depends(admin)])
+    def q_overview():
+        return {"stats": queue.stats(), "nodes": queue.nodes(), "recent": queue.recent(), "schedules": queue.schedules(),
+                "llm_last": router.last}
+
+    @app.post("/admin/queue/schedule", dependencies=[Depends(admin)])
+    def q_schedule(body: ScheduleBody):
+        if body.kind not in handlers:
+            raise HTTPException(400, f"kind must be one of {sorted(handlers)}")
+        queue.schedule(body.name, body.kind, body.payload, body.interval_s, body.requires)
+        return {"ok": True}
+
+    @app.get("/admin/resources", dependencies=[Depends(admin)])
+    def resources():
+        import psutil
+        vm = psutil.virtual_memory()
+        du = psutil.disk_usage(str(paths.home()))
+        local = {"cpu_percent": psutil.cpu_percent(interval=0.2), "cpu_count": psutil.cpu_count(),
+                 "ram_used_gb": round(vm.used / 1e9, 2), "ram_total_gb": round(vm.total / 1e9, 2), "ram_percent": vm.percent,
+                 "disk_free_gb": round(du.free / 1e9, 1)}
+        engine_hw = None
+        if eng.status()["connected"]:
+            try:
+                engine_hw = eng.client.get(f"{eng.base_url}/api/hardware", headers=eng._headers(), timeout=5).json()
+            except Exception as exc:
+                engine_hw = {"error": str(exc)[:200]}
+        return {"this_node": local, "engine": engine_hw, "nodes": queue.nodes(), "queue": queue.stats()}
 
     # ----- technology intelligence -----
     @app.get("/admin/intel", dependencies=[Depends(admin)])
@@ -627,6 +735,10 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
 
     @app.post("/admin/missions", dependencies=[Depends(admin)])
     def mission_start(body: MissionBody):
+        if queue_mode:
+            mid = mis.create(body.goal, "admin")
+            queue.enqueue("mission.run", {"mission_id": mid}, idem=f"mission:{mid}")
+            return {"id": mid, "queued": True}
         return {"id": mis.start(body.goal, "admin")}
 
     @app.get("/admin/missions", dependencies=[Depends(admin)])
@@ -649,7 +761,11 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     def mission_resume(mid: str):
         regs = mis.complete_skill_registration(mid)
         try:
-            mis.resume(mid)
+            if queue_mode:
+                mis.resume(mid, background=None)
+                queue.enqueue("mission.run", {"mission_id": mid}, idem=f"mission:{mid}:resume:{int(time.time())}")
+            else:
+                mis.resume(mid)
         except ValueError as exc:
             raise HTTPException(409, str(exc))
         return {"skills": regs}

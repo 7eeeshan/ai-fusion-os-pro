@@ -7,14 +7,14 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+from .db import SafeConn
 from typing import Any, Optional
 
 
 class ConfigStore:
     def __init__(self, path: Path):
         self.lock = threading.RLock()
-        self.conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
+        self.conn = SafeConn(path)
         self.conn.execute("CREATE TABLE IF NOT EXISTS config (key TEXT, version INTEGER, value TEXT, by TEXT, at REAL, "
                           "note TEXT, PRIMARY KEY(key, version))")
 

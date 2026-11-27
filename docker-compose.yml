@@ -1,0 +1,24 @@
+# Cloud deployment: API + in-process worker + scheduler. Keeps running when your PC is off.
+# Put it behind HTTPS (Caddy, a cloud load balancer or Tailscale). The port is bound to localhost by default.
+services:
+  fusion-os:
+    build: .
+    restart: unless-stopped
+    ports: ["127.0.0.1:8790:8790"]
+    environment:
+      FUSION_OS_WORKER: "1"
+      FUSION_OS_SCHEDULER: "1"
+      FUSION_OS_MISSION_MODE: "queue"
+      FUSION_OS_LOCATION: "cloud"
+      FUSION_OS_CAPABILITIES: "docker"
+      FUSION_OS_LLM_ORDER: "queue,anthropic"   # prefer your PC's AI Fusion Engine when it is online
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - fusion-data:/data
+      # The sandbox starts sibling containers. Access to the Docker socket is root-equivalent on this host:
+      # use a dedicated VM for this service (or rootless Docker / sysbox).
+      - /var/run/docker.sock:/var/run/docker.sock
+volumes:
+  fusion-data:
