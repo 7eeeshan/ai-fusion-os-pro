@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-fusion-os-pro"
+version = "0.1.0"
+description = "AI Fusion OS Pro: governed autonomous AI workforce. Phase 1: security controller, policy engine, sandbox, approvals, audit log."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.162.2",
+  "uvicorn==0.54.0",
+  "httpx==0.28.1",
+  "pydantic==2.14.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+fusion-os = "fusion_os.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fusion_os*"]
+
+[tool.setuptools.package-data]
+fusion_os = ["security/default_policy.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

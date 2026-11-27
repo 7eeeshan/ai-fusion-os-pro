@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "description": "Default AI Fusion OS Pro policy. Rules are checked top to bottom; first match wins; no match = deny. The immutable rules in policy.py run before these and cannot be overridden here.",
+  "approval_ttl_seconds": 86400,
+  "rules": [
+    {"id": "chat", "actions": ["llm.chat"], "effect": "allow"},
+    {"id": "web-research", "actions": ["research.web.search", "research.web.fetch", "research.deep.fetch"], "zones": ["standard", "research"], "effect": "allow"},
+    {"id": "tor-research", "actions": ["research.tor.fetch"], "zones": ["darkweb"], "effect": "allow"},
+    {"id": "memory-read", "actions": ["memory.read"], "effect": "allow"},
+    {"id": "memory-write", "actions": ["memory.write"], "zones": ["standard", "research", "security"], "effect": "allow"},
+    {"id": "skill-run", "actions": ["skill.execute"], "zones": ["standard", "research", "security"], "effect": "allow"},
+    {"id": "sandbox-offline", "actions": ["sandbox.exec"], "when": {"network": ["none"]}, "effect": "allow"},
+    {"id": "sandbox-online", "actions": ["sandbox.exec"], "effect": "require_approval"},
+    {"id": "passive-security", "actions": ["security.scan.passive", "security.code.analyze", "security.malware.static"], "zones": ["security"], "effect": "allow"},
+    {"id": "active-security", "actions": ["security.scan.active"], "zones": ["security"], "requires_engagement": true, "effect": "allow"},
+    {"id": "exploit-verification", "actions": ["security.exploit.verify"], "zones": ["security"], "requires_engagement": true, "effect": "require_approval"},
+    {"id": "privileged", "actions": ["skill.register", "model.install", "system.update", "agent.spawn", "credential.read", "files.write"], "zones": ["standard", "research", "security"], "effect": "require_approval"}
+  ]
+}
