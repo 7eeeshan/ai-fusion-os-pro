@@ -283,7 +283,10 @@ class MissionRunner:
                     ctx["results"][str(step.get("id", i + 1))] = result
                     i += 1
                     continue
-                self._log(mid, "step.failed", step=step.get("id"), reason=why)
+                self._log(mid, "step.failed", step=step.get("id"), reason=why,
+                          draft=None if result is None else str(result)[:2000])
+                if result is not None:  # keep the rejected output so the person can see what the agent produced
+                    ctx.setdefault("drafts", {})[str(step.get("id", i + 1))] = str(result)[:4000]
                 if replans >= self.limits.max_replans:
                     raise RuntimeError(f"step {step.get('id')} failed after {replans} replans: {why}")
                 replans += 1
@@ -395,9 +398,12 @@ class MissionRunner:
         expected = step.get("expected")
         if not expected:
             return True, "no expectation set"
+        lenient = ("This is a writing step: pass it if the content substantially achieves the outcome. Do not fail it "
+                   "for minor formatting differences such as bullet symbols, numbering, headings or an extra sentence.\n"
+                   if step.get("tool") == "think" else "")
         try:
             v = extract_json(self._ask(mid, "verifier", "verifier",
-                f"Step: {json.dumps(step)}\nExpected outcome: {expected}\nResult:\n{str(result)[:6000]}\n"
+                f"Step: {json.dumps(step)}\nExpected outcome: {expected}\n{lenient}Result:\n{str(result)[:6000]}\n"
                 'Return JSON {"pass": true|false, "reason": str}'))
             return bool(v.get("pass")), str(v.get("reason", ""))
         except ValueError:
@@ -461,7 +467,8 @@ class MissionRunner:
         m = self.get(mid) or {}
         plan = m.get("plan") or {}
         steps = [f"{s.get('role')}:{s.get('tool')}" for s in plan.get("steps", [])] if isinstance(plan, dict) else []
-        self._upd(mid, status=status, result={"final": ctx.get("final"), "steps": ctx.get("results", {})}, error=error)
+        self._upd(mid, status=status, result={"final": ctx.get("final"), "steps": ctx.get("results", {}),
+                                                     "rejected_drafts": ctx.get("drafts", {})}, error=error)
         if status in ("succeeded", "failed"):
             self.mem.record_episode(m.get("goal", ""), steps or ["(no plan)"], "success" if status == "succeeded" else "failure",
                                     mission_id=mid, error=error)

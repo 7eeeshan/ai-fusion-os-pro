@@ -218,3 +218,23 @@ def test_untouched_old_default_policy_is_upgraded(tmp_path):
     (d / "policy.json").write_text(edited)
     (d / "policy.lock").write_text(sha256_text(edited))
     assert SecurityController(d).policy.doc.version == 1  # admin-changed policy is left alone
+
+
+def test_writing_step_gets_lenient_check_and_rejected_drafts_are_kept(tmp_path):
+    plan = json.dumps({"strategy": "write", "steps": [{"id": 1, "role": "writer", "tool": "think",
+                                                       "inputs": {"task": "three bullets"}, "expected": "three bullets"}]})
+    def h(system, prompt, n):
+        if "planning agent" in system:
+            return plan
+        if "independent reviewer" in system:
+            return '{"score": 5}'
+        if "independent verifier" in system:
+            assert "writing step" in prompt
+            return '{"pass": false, "reason": "not exactly three bullets"}'
+        return "- a\n- b\n- c\n- d"
+    ctl = SecurityController(tmp_path / "s")
+    r = MissionRunner(ctl, MemoryStore(tmp_path / "m.db"), Scripted(h), tmp_path / "x.db")
+    mid = r.start("summarise", background=False)
+    m = r.get(mid)
+    assert m["status"] == "failed"
+    assert m["result"]["rejected_drafts"]["1"].startswith("- a")
