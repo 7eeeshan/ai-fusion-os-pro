@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "description": "Default AI Fusion OS Pro policy. Rules are checked top to bottom; first match wins; no match = deny. The immutable rules in policy.py run before these and cannot be overridden here.",
   "approval_ttl_seconds": 86400,
   "rules": [
@@ -170,6 +170,28 @@
       "actions": [
         "code.run",
         "code.delegate"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "require_approval"
+    },
+    {
+      "id": "computer-use",
+      "description": "Using the person's own computer from the chat (screenshots, reading windows, mouse and keyboard). Only in a chat where the person turned on 'Use my computer'. Looking needs no approval there; every click, key or opened app is approved, unless the person turned on 'without asking' for that chat.",
+      "actions": [
+        "computer.observe",
+        "computer.control.preapproved"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "allow"
+    },
+    {
+      "id": "computer-control",
+      "actions": [
+        "computer.control"
       ],
       "zones": [
         "standard"

@@ -133,6 +133,15 @@ class ConnectorManager:
                 self._drop_session(cid)
         return self._public(c)
 
+    def restore_settings(self, cid: str, enabled: bool, permissions: dict) -> None:
+        """Carry the person's choices over to a re-created connector (used when a synced server changes)."""
+        with self.lock:
+            d = self._load()
+            c = d["connectors"][cid]
+            c["enabled"] = bool(enabled)
+            c["permissions"] = {str(k): v for k, v in (permissions or {}).items() if v in PERMISSIONS}
+            self._save(d)
+
     def set_permission(self, cid: str, tool: str, permission: str) -> dict:
         if permission not in PERMISSIONS:
             raise ValueError(f"permission must be one of {PERMISSIONS}")
@@ -174,23 +183,43 @@ class ConnectorManager:
         return s
 
     def refresh(self, cid: str) -> dict:
-        """Connect and (re)read the tool list."""
+        """Connect and (re)read the tool list. The connection is made outside the lock, so one slow server
+        (up to its 60 s start-up timeout) doesn't hold up the other connectors or the chat."""
+        with self.lock:
+            c0 = dict(self._load()["connectors"][cid])
+            self._drop_session(cid)
+        s, info = None, {}
+        if c0["type"] == "http":
+            s = HTTPSession(c0["url"], c0.get("headers"))
+        try:
+            if s is None:
+                s = StdioSession(c0["command"], c0.get("args"), c0.get("env"))
+            s.initialize()
+            tools = s.list_tools()
+            info = {"tools": [{"name": t["name"], "description": t.get("description", ""),
+                               "inputSchema": t.get("inputSchema") or {"type": "object"},
+                               "annotations": t.get("annotations") or {}} for t in tools if t.get("name")],
+                    "server": s.server_info, "last_error": None, "connected_at": time.time()}
+        except (MCPError, OSError, ValueError) as exc:
+            info = {"last_error": str(exc)[:500]}
+            if s is not None:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+                s = None
         with self.lock:
             d = self._load()
-            c = d["connectors"][cid]
-            self._drop_session(cid)
-            try:
-                s = self._session(c)
-                tools = s.list_tools()
-                c["tools"] = [{"name": t["name"], "description": t.get("description", ""),
-                               "inputSchema": t.get("inputSchema") or {"type": "object"},
-                               "annotations": t.get("annotations") or {}} for t in tools if t.get("name")]
-                c["server"] = s.server_info
-                c["last_error"] = None
-                c["connected_at"] = time.time()
-            except (MCPError, OSError, ValueError) as exc:
-                c["last_error"] = str(exc)[:500]
+            c = d["connectors"].get(cid)
+            if c is None:  # removed while connecting
+                if s is not None:
+                    s.close()
+                raise KeyError(cid)
+            c.update(info)
             self._save(d)
+            if s is not None:
+                self._drop_session(cid)
+                self.sessions[cid] = s
         return self._public(c)
 
     def call(self, cid: str, tool: str, arguments: dict) -> dict:

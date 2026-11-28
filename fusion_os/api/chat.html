@@ -66,6 +66,10 @@ body.collapsed #side{margin-left:-272px}
 .tool.pending{border-color:var(--acc);box-shadow:0 0 0 3px var(--accsoft)}
 .tool .ask{padding:4px 14px 12px}.tool .ask .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .tool pre .ad{color:var(--ok)}.tool pre .rm{color:var(--bad)}.tool pre .hd{color:var(--mute)}
+#art{position:fixed;top:0;right:0;bottom:0;width:min(50vw,760px);background:var(--panel);border-left:1px solid var(--line);z-index:40;display:flex;flex-direction:column}
+#art .ah{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}#art iframe{flex:1;border:0;background:#fff}
+body.arton #main{margin-right:min(50vw,760px)}@media (max-width:760px){#art{width:100vw}body.arton #main{margin-right:0}}
+.tool img.shot{display:block;max-width:100%;border-top:1px solid var(--line);cursor:zoom-in}
 .menu .chk{display:flex;align-items:center;gap:8px}.menu .chk b{width:16px;text-align:center;color:var(--acc)}
 .st-done{color:var(--ok)}.st-error,.st-denied{color:var(--bad)}.st-pending{color:var(--acc)}
 /* markdown */
@@ -123,6 +127,7 @@ body.collapsed #side{margin-left:-272px}
   <span>AI Fusion OS Pro</span><span class="sp"></span><button class="iconbtn" title="Hide sidebar" onclick="toggleSide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button></div>
  <button class="navbtn new" onclick="newChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>New chat</button>
  <button class="navbtn" data-nav="search" onclick="openSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>Search chats</button>
+ <button class="navbtn" data-nav="projects" onclick="go('projects')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Projects</button>
  <button class="navbtn" data-nav="skills" onclick="go('skills')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>Skills</button>
  <button class="navbtn" data-nav="connectors" onclick="go('connectors')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>Connectors</button>
  <button class="navbtn" data-nav="improve" onclick="go('improve')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19l5-5 4 4 7-8"/><path d="M15 10h5v5"/></svg>Improve</button>
@@ -144,7 +149,7 @@ body.collapsed #side{margin-left:-272px}
 const S=sessionStorage;let ADM=S.getItem("adm");
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const ic={link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+const ic={screen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
  file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
  star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>',
  plug:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>',
@@ -184,7 +189,8 @@ function md(src){
  while(i<lines.length){const l=lines[i];
   let m=l.match(/^```\s*([\w+-]*)/);
   if(m){flush();const lang=m[1];const buf=[];i++;while(i<lines.length&&!/^```/.test(lines[i]))buf.push(lines[i++]);i++;
-   out+=`<pre><div class="bar"><span>${esc(lang||"text")}</span><button class="iconbtn" title="Copy" onclick="copyCode(this)">${ic.copy}</button></div><code>${esc(buf.join("\n"))}</code></pre>`;continue}
+   const prev=/^(html|svg|xml)$/i.test(lang)&&/<(html|body|div|svg|canvas|style|script|!doctype)/i.test(buf.join("\n"))||/^(html)$/i.test(lang);
+   out+=`<pre><div class="bar"><span>${esc(lang||"text")}</span>${prev?`<button class="pill" style="margin-left:auto;margin-right:4px" title="Preview" onclick="openArtifact(this)">Preview</button>`:""}<button class="iconbtn" title="Copy" onclick="copyCode(this)">${ic.copy}</button></div><code>${esc(buf.join("\n"))}</code></pre>`;continue}
   if(/^\s*$/.test(l)){flush();i++;continue}
   m=l.match(/^(#{1,4})\s+(.*)/);if(m){flush();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`;i++;continue}
   if(/^\s*([-*_])\s*\1\s*\1[\s\1]*$/.test(l)){flush();out+="<hr>";i++;continue}
@@ -217,7 +223,7 @@ async function status(){try{const [s,m]=await Promise.all([api("/admin/status"),
   `<div><span class="dot ${sk==="none"?"bad":"ok"}"></span>Sandbox: ${esc(sk)}</div>`+
   (s.pending_approvals?`<div><span class="dot warn"></span><a href="/dashboard">${s.pending_approvals} pending approval(s)</a></div>`:"")+
   `<div title="Model order">Models: ${esc(m.providers.join(" → "))}</div>`}catch{}}
-function route(){const h=location.hash.slice(1);if(h.startsWith("chat/"))openChat(h.slice(5),true);else if(h==="skills")pageSkills();else if(h==="connectors")pageConnectors();else if(h==="improve")pageImprove();else home()}
+function route(){const h=location.hash.slice(1);if(h.startsWith("chat/"))openChat(h.slice(5),true);else if(h==="skills")pageSkills();else if(h==="connectors")pageConnectors();else if(h==="improve")pageImprove();else if(h==="projects")pageProjects();else if(h.startsWith("project/"))pageProject(h.slice(8));else home()}
 window.addEventListener("hashchange",()=>{if(!location.hash.startsWith("#launch="))route()});
 function go(p){location.hash=p}
 function setNav(n){document.querySelectorAll(".navbtn[data-nav]").forEach(b=>b.classList.toggle("on",b.dataset.nav===n))}
@@ -238,21 +244,30 @@ function openSearch(){setNav("search");CUR=null;$("title").textContent="Search";
  $("view").innerHTML=`<div class="page"><input id="sq" placeholder="Search your chats" style="width:100%" oninput="doSearch(this.value)"><div id="sres"></div></div>`;$("sq").focus();doSearch("")}
 async function doSearch(q){const r=await api("/admin/chat/chats?q="+encodeURIComponent(q));$("sres").innerHTML=r.length?r.map(c=>`<div class="card" style="cursor:pointer" onclick="go('chat/${c.id}')"><div class="h"><b>${esc(c.title)}</b><span class="sp"></span><span class="tag">${new Date(c.updated*1000).toLocaleDateString()}</span></div></div>`).join(""):`<div class="empty">No chats match.</div>`}
 /* ---------- chat views ---------- */
-function newChat(){CUR=null;DRAFT={links:[],files:[],skill:null,project:null};if(location.hash&&location.hash!=="#")go("");else home()}
+function newChat(){CUR=null;DRAFT={links:[],files:[],skill:null,project:null,space:null};if(location.hash&&location.hash!=="#")go("");else home()}
 async function loadSide(){try{[ISK,TOOLS]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools"+(CUR?"?chat="+CUR.id:""))])}catch{}}
 function home(){setNav("");CUR=null;renderList();$("title").textContent="";
  const hr=new Date().getHours(),g=hr<5?"Good night":hr<12?"Good morning":hr<18?"Good afternoon":"Good evening";
- $("view").innerHTML=`<div class="hello"><h1>${g}. How can I help?</h1><div id="slot"></div><div class="chips">
+ $("view").innerHTML=`<div class="hello">${DRAFT&&DRAFT.space?`<div class="muted" style="margin-bottom:6px">New chat in project <a href="#project/${esc(DRAFT.space)}">${esc(DRAFT.spaceName||"")}</a></div>`:""}<h1>${g}. How can I help?</h1><div id="slot"></div><div class="chips">
   ${["Summarize a web page I paste","Build me a skill that converts CSV to JSON","Find and fix the failing test in my project","What can my connectors do?"].map(s=>`<button class="chip" onclick="useChip(this)">${esc(s)}</button>`).join("")}</div></div>`;
  composer(true);loadSide()}
 function useChip(b){const t=$("ta");t.value=b.textContent;t.focus();autosize()}
 async function openChat(id,fromHash){setNav("");try{CUR=await api("/admin/chat/chats/"+id)}catch{go("");return}renderList();$("title").textContent=CUR.title;
- DRAFT={links:[],files:[],skill:CUR.settings.skill||null,project:null};renderMsgs();composer(false);loadSide()}
+ DRAFT={links:[],files:[],skill:CUR.settings.skill||null,project:null,space:null};titleBar();renderMsgs();composer(false);loadSide()}
 function attChip(a){if(a.type==="link")return`<a class="att ${a.injection&&a.injection.length?"warn":""}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="${esc(a.url)}">${ic.link}<span>${esc(a.title||a.url)}</span></a>`;
  return`<span class="att">${ic.file}<span>${esc(a.name)}</span></span>`}
-const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector",list_files:"Listed files",read_file:"Read file",search_code:"Searched the code",edit_file:"Edit file",write_file:"Write file",run_code:"Run code",opencode_task:"Hand off to OpenCode",read_app_page:"Read this app's interface",change_app_page:"Change this app's interface"};
+const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector",list_files:"Listed files",read_file:"Read file",search_code:"Searched the code",edit_file:"Edit file",write_file:"Write file",run_code:"Run code",opencode_task:"Hand off to OpenCode",read_app_page:"Read this app's interface",change_app_page:"Change this app's interface",computer_screenshot:"Looked at the screen",computer_list_windows:"Listed windows",computer_read_window:"Read a window",computer_open_app:"Open an app",computer_focus_window:"Switch window",computer_click:"Click",computer_click_element:"Click a control",computer_type_text:"Type text",computer_press_keys:"Press keys",computer_scroll:"Scroll"};
 function toolTitle(m){const t=m.meta.tool||"";if(TL[t])return TL[t];if(t.startsWith("skill__"))return"Ran skill "+t.slice(7);const p=t.split("__");return p.length>1?`${p[1]} · ${p[0]}`:t}
-function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:me.kind==="code"?ic.code:t0(me.tool);
+function shotImg(n){return n?`<img class="shot" data-shot="${esc(n)}" alt="Screenshot" onclick="window.open(this.src)">`:""}
+async function loadShots(){for(const im of document.querySelectorAll("img[data-shot]:not([src])")){const n=im.dataset.shot;try{if(!SHOTS[n]){const r=await fetch("/admin/computer/shot/"+encodeURIComponent(n),{headers:{"Authorization":"Bearer "+ADM}});if(!r.ok){im.replaceWith(Object.assign(document.createElement("span"),{className:"muted",textContent:"(screenshot no longer kept)"}));continue}SHOTS[n]=URL.createObjectURL(await r.blob())}im.src=SHOTS[n]}catch{}}}
+const SHOTS={};
+function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:me.kind==="code"?ic.code:me.kind==="computer"?ic.screen:t0(me.tool);
+ if(me.kind==="computer"){const out=String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"");
+  if(st==="pending")return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${esc(String(me.preview||"").slice(0,4000))}</pre></details>
+  <div class="ask">The assistant wants to do this on your computer, as you. Approve only if it is what you asked for.
+  <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button><button class="btn ghost small" onclick="decide(${m.id},true,true)">Allow for this chat</button><button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`;
+  return`<details class="tool" ${me.image?"open":""}><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
+  ${shotImg(me.image)}<pre>${esc(out.slice(0,12000))}</pre></details>`}
  if((me.kind==="code"||me.tool==="change_app_page")&&me.preview!=null){const ui=me.tool==="change_app_page",oc=me.tool==="opencode_task",isDiff=me.tool!=="run_code"&&!(oc&&st==="pending");const body=isDiff?diffHtml(String(me.preview).slice(0,40000)):esc(String(me.preview).slice(0,20000));
   if(st==="pending")return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${body}</pre></details>
   <div class="ask">${ui?"The assistant wants to change this app's own interface. It passed the automatic checks. After you approve, reload to see it; Improve > Interface can undo it at any time.":oc?"The assistant wants to hand this task to OpenCode. OpenCode works outside the sandbox and changes files in this folder directly; you'll see every changed file afterwards.":isDiff?"The assistant wants to change this file in your project.":"The assistant wants to run this code. It runs in the sandbox without network, on a copy of your project, so your files are not changed."}
@@ -280,7 +295,7 @@ function renderMsgs(extra=""){const ms=CUR.messages;let h="";
    ${last?`<button class="iconbtn" title="Retry" onclick="retry()">${ic.retry}</button>`:""}${model.provider?`<span>${esc(model.provider)}${model.seconds?" · "+model.seconds.toFixed(1)+"s":""}</span>`:""}</div></div>`}
   else if(m.role==="tool")h+=toolCard(m);
   else h+=`<div class="notice">${esc(m.content)}</div>`});
- $("view").innerHTML=`<div class="col">${h}${extra}</div>`;$("view").scrollTop=1e9}
+ $("view").innerHTML=`<div class="col">${h}${extra}</div>`;$("view").scrollTop=1e9;loadShots()}
 async function rateMsg(id,r,ev){if(ev)ev.stopPropagation();if(!CUR)return;if(r>0){await sendRate(id,1,"","");return}
  closeMenus();const m=document.createElement("div");m.className="menu fb";m.onclick=e=>e.stopPropagation();m.style.cssText="left:50%;top:22%;transform:translateX(-50%);width:min(560px,92vw);padding:14px 16px";
  m.innerHTML=`<b>What should it do instead?</b><div class="sub" style="padding:4px 0">Your note becomes a lesson the assistant follows from now on. A better answer, if you write one, is also used to train the local model.</div>
@@ -291,6 +306,31 @@ async function rateMsg(id,r,ev){if(ev)ev.stopPropagation();if(!CUR)return;if(r>0
 async function sendRate(id,r,note,better){closeMenus();try{const o=await api(`/admin/chat/chats/${CUR.id}/rate`,{method:"POST",body:{message_id:id,rating:r,note:note||"",better:better||""}});
  const m=CUR.messages.find(x=>x.id===id);if(m)m.meta.rating=o.rating;renderMsgs();toast(o.lesson?"Learned: "+o.lesson.text:r>0?"Thanks, noted as a good answer":"Noted")}catch(e){toast(String(e.message||e))}}
 let IMP={tab:"lessons"};
+let SPACES=[];
+async function pageProjects(){setNav("projects");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ SPACES=await api("/admin/projects");
+ $("view").innerHTML=`<div class="page"><h2>Projects</h2><p class="lead">Keep related chats together. Each project has its own instructions and knowledge files, and every chat in it uses them.</p>
+ <div style="margin-bottom:8px"><button class="btn" onclick="newSpace()">New project</button></div>
+ ${SPACES.length?SPACES.map(p=>`<div class="card" style="cursor:pointer" onclick="go('project/${esc(p.id)}')"><div class="h"><b>${esc(p.name)}</b><span class="sp"></span><span class="tag">${p.chats} chat${p.chats===1?"":"s"}</span><span class="tag">${p.files.length} file${p.files.length===1?"":"s"}</span></div>${p.description?`<div class="muted" style="margin-top:4px">${esc(p.description)}</div>`:""}</div>`).join(""):`<div class="empty">No projects yet.</div>`}</div>`}
+async function newSpace(){const n=prompt("Project name");if(!n||!n.trim())return;const d=prompt("What is it about? (optional)")||"";const p=await api("/admin/projects",{method:"POST",body:{name:n.trim(),description:d}});go("project/"+p.id)}
+async function pageProject(id){setNav("projects");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ let p;try{p=await api("/admin/projects/"+id)}catch{go("projects");return}
+ const kb=p.size>1048576?(p.size/1048576).toFixed(1)+" MB":Math.ceil(p.size/1024)+" KB";
+ $("view").innerHTML=`<div class="page"><div class="muted"><a href="#projects">Projects</a></div><h2>${esc(p.name)}</h2>${p.description?`<p class="lead">${esc(p.description)}</p>`:""}
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn" onclick="chatInSpace('${esc(p.id)}',${esc(JSON.stringify(p.name))})">New chat in this project</button><button class="btn ghost" onclick="renameSpace('${esc(p.id)}')">Rename</button><button class="btn ghost" onclick="deleteSpace('${esc(p.id)}')">Delete project</button></div>
+ <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+ <div class="card"><b>Instructions</b><div class="muted" style="margin:4px 0 8px">How the assistant should work in this project's chats.</div><textarea id="spIns" rows="8" style="width:100%">${esc(p.instructions||"")}</textarea><div style="margin-top:6px"><button class="btn small" onclick="saveSpaceIns('${esc(p.id)}')">Save instructions</button></div></div>
+ <div class="card"><div class="h"><b>Knowledge</b><span class="sp"></span><span class="tag">${p.files.length} files, ${kb}</span></div><div class="muted" style="margin:4px 0 8px">Text files the assistant reads in this project. Small sets are read in full; for large ones it gets the best matching passages.</div>
+  ${p.files.map(f=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0">${ic.file}<span style="flex:1;word-break:break-all">${esc(f.name)}</span><span class="muted">${Math.ceil(f.size/1024)} KB</span><button class="iconbtn" title="Remove" onclick="rmSpaceFile('${esc(p.id)}',${esc(JSON.stringify(f.name))})">✕</button></div>`).join("")||`<div class="empty" style="font-size:13px">No files yet</div>`}
+  <div style="margin-top:6px"><button class="btn small ghost" onclick="addSpaceFiles('${esc(p.id)}')">Add files</button></div></div></div>
+ <h3 style="margin-top:18px">Chats</h3>${p.chat_list.length?p.chat_list.map(c=>`<div class="card" style="cursor:pointer;padding:10px 14px" onclick="go('chat/${esc(c.id)}')">${esc(c.title)}</div>`).join(""):`<div class="empty">No chats in this project yet.</div>`}</div>`}
+function chatInSpace(id,name){CUR=null;DRAFT={links:[],files:[],skill:null,project:null,space:id,spaceName:name};go("");home()}
+async function saveSpaceIns(id){await api("/admin/projects/"+id,{method:"PATCH",body:{instructions:$("spIns").value}});toast("Instructions saved")}
+async function renameSpace(id){const n=prompt("New name");if(!n||!n.trim())return;await api("/admin/projects/"+id,{method:"PATCH",body:{name:n.trim()}});pageProject(id)}
+async function deleteSpace(id){if(!confirm("Delete this project and its knowledge files? Its chats are kept, outside any project."))return;await api("/admin/projects/"+id,{method:"DELETE"});go("projects")}
+async function rmSpaceFile(id,n){await api(`/admin/projects/${id}/files/${encodeURIComponent(n)}`,{method:"DELETE"});pageProject(id)}
+function addSpaceFiles(id){const i=document.createElement("input");i.type="file";i.multiple=true;i.accept=".txt,.md,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.log,.ini,.toml,.sql,.ps1,.sh,text/*";
+ i.onchange=async()=>{let n=0;for(const f of i.files){if(f.size>2000000){toast(f.name+" is larger than 2 MB");continue}try{await api(`/admin/projects/${id}/files`,{method:"POST",body:{name:f.name,content:await f.text()}});n++}catch{}}toast(`Added ${n} file${n===1?"":"s"}`);pageProject(id)};i.click()}
 async function pageImprove(tab){if(tab)IMP.tab=tab;setNav("improve");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
  const L=await api("/admin/learning");let T=null;try{T=await api("/admin/learning/train")}catch{}
  const tabs=[["lessons","Lessons"],["interface","Interface"],["training","Model training"]];
@@ -340,6 +380,7 @@ function composer(isHome){const c=$("composer");c.style.display="";
   <button class="pill ${DRAFT.skill?"on":""}" data-menu onclick="skillMenu(event)">${ic.star.replace('<svg','<svg width="14" height="14"')} ${esc(DRAFT.skill||"Skills")}</button>
   <button class="pill" data-menu onclick="toolsMenu(event)">${ic.plug.replace('<svg','<svg width="14" height="14"')} Tools</button>
   <button class="pill ${projOn()?"on":""}" data-menu onclick="projectMenu(event)" title="${esc(projFolder()||"")}">${ic.code.replace('<svg','<svg width="14" height="14"')} ${esc(projLabel())}</button>
+  ${CUR&&CUR.computer&&CUR.computer.available?`<button class="pill ${CUR.computer.on?"on":""}" data-menu onclick="computerMenu(event)" title="Let the assistant use this computer in this chat">${ic.screen.replace('<svg','<svg width="14" height="14"')} Computer</button>`:""}
   <span class="sp"></span><button class="send" id="sendb" title="Send" onclick="send()">${ic.up}</button></div></div>
   <div class="hint">Links are read as untrusted text. Tools that pay, send or delete always ask first. Answers can be wrong; check what matters.</div>`;
  if(isHome){c.style.display="none";$("slot").innerHTML=html.replace('class="hint"','class="hint" style="margin-top:10px"')}else c.innerHTML=html;
@@ -369,10 +410,24 @@ async function projectMenu(ev){ev.stopPropagation();const tgt=ev.currentTarget;i
  ${OC.installed?(CUR?`<button class="chk" onclick="setAuto('opencode_commands',${!oc})"><b>${oc?"✓":""}</b>Let OpenCode run commands</button>`:""):`<button onclick="closeMenus();ocHelp()">${ic.code}How to install OpenCode</button>`}
  <div class="sub">Claude Code ${CC&&CC.installed?(CC.engine?`on Engine Pro (${esc(CC.model)}), offline`:"found; start Engine Pro to use it offline"):"not installed"}</div>
  ${CC&&CC.installed&&CC.engine?`<button onclick="openClaudeCode()">${ic.code}Open Claude Code here (offline)</button>`:`<button onclick="closeMenus();ccHelp()">${ic.code}About Claude Code offline</button>`}`)}
+function computerMenu(ev){const c=CUR.computer;menuAt(ev,`<div class="sub">Use my computer in this chat</div>
+ <button class="chk" onclick="setComputer('computer',${!c.on})"><b>${c.on?"✓":""}</b>Let the assistant see and use this PC</button>
+ ${c.on?`<button class="chk" onclick="setComputer('computer_auto',${!c.auto})"><b>${c.auto?"✓":""}</b>Act without asking each time</button>`:""}
+ <div class="sub" style="max-width:300px;white-space:normal">It can take screenshots, read windows, open apps, click, type and press keys, as you. Looking is allowed; each action asks you first unless you tick the second option. The emergency stop blocks it at once.</div>`)}
+async function setComputer(k,on){closeMenus();if(on&&k==="computer_auto"&&!confirm("Let the assistant click, type and open apps on this PC without asking, for this chat? You can turn it off here at any time."))return;
+ await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{[k]:on}});await refresh();composer(false);toast(k==="computer"?(on?"The assistant can use this computer in this chat":"Computer use is off"):(on?"Acting without asking":"Asking before each action"))}
 async function openClaudeCode(){closeMenus();toast("Opening Claude Code on your local model…");try{const r=await api("/admin/claude-code/launch",{method:"POST",body:{chat:CUR?CUR.id:null}});
  if(r.launched)toast("Claude Code opened in "+r.folder+(r.warning?" ("+r.warning+")":""));else renderInfo("Start Claude Code","Run this in PowerShell in "+r.folder+":\n\n"+r.manual)}catch(e){toast(String(e.message||e))}}
 function ccHelp(){renderInfo("Claude Code with AI Fusion, offline","Claude Code can run on your own Engine Pro model with no internet. Your plugins, skills, hooks and local MCP servers keep working because only the model changes. Your normal Claude Code (with your Anthropic account) is not changed.\n\nConnectors you added on claude.ai belong to your Anthropic account, so they need the internet and are not available offline.\n\n1. Install Claude Code once: irm https://claude.ai/install.ps1 | iex\n2. Start AI Fusion Engine Pro (tray > Open AI Fusion Engine).\n3. Code menu > Open Claude Code here (offline).\n\nThe local model is loaded with a 32k-token context. A 7B model is much less capable than Claude models: keep tasks small and specific."+(CC&&CC.manual?"\n\nTo start it yourself (for example in VS Code's terminal):\n"+CC.manual:""))}
 function ocHelp(){renderInfo("Link OpenCode","OpenCode is the open source coding agent (opencode.ai, MIT licence). Install it once, then restart AI Fusion OS Pro; the chat can then hand coding tasks to it, and it uses your Engine Pro model when the engine is running.\n\nIn PowerShell: npm install -g opencode-ai\n\nOr download it from github.com/sst/opencode/releases and set FUSION_OS_OPENCODE in desktop.env to the path of opencode.exe.")}
+function openArtifact(btn){const code=btn.closest("pre").querySelector("code").textContent;let a=$("art");
+ if(!a){a=document.createElement("aside");a.id="art";document.body.appendChild(a)}
+ const isSvg=/^\s*<svg/i.test(code);
+ const guard='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:">';
+ const doc=isSvg?`<!doctype html><html><head>${guard}</head><body style="margin:0;display:grid;place-items:center;min-height:100vh">${code}<\/body><\/html>`:guard+code;
+ a.innerHTML=`<div class="ah"><b>Preview</b><span class="muted">runs sandboxed, with no network or access to the app</span><span class="sp" style="flex:1"></span><button class="btn small ghost" onclick="dlArtifact()">Download</button><button class="iconbtn" title="Close" onclick="$('art').remove();document.body.classList.remove('arton')">✕</button></div><iframe sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>`;
+ a.querySelector("iframe").srcdoc=doc;a.dataset.code=code;a.dataset.ext=isSvg?"svg":"html";document.body.classList.add("arton")}
+function dlArtifact(){const a=$("art");const b=new Blob([a.dataset.code],{type:a.dataset.ext==="svg"?"image/svg+xml":"text/html"});const l=document.createElement("a");l.href=URL.createObjectURL(b);l.download="artifact."+a.dataset.ext;l.click();setTimeout(()=>URL.revokeObjectURL(l.href),2000)}
 function renderInfo(t,b){closeMenus();const m=document.createElement("div");m.className="menu";m.style.cssText="left:50%;top:30%;transform:translateX(-50%);max-width:520px;padding:16px 18px;white-space:pre-wrap;font-size:14px";
  m.innerHTML=`<b style="font-size:15px">${esc(t)}</b>\n\n${esc(b)}\n\n<button class="btn small" onclick="closeMenus()">OK</button>`;document.body.appendChild(m)}
 async function setProject(v){closeMenus();if(v===undefined){v=prompt("Folder with your code (full path, for example C:\\Users\\you\\projects\\app)",projFolder());if(v===null)return;v=v.trim()}
@@ -384,7 +439,7 @@ function toolsMenu(ev){const by={};TOOLS.forEach(t=>{const g=t.kind==="connector
  menuAt(ev,`<div style="max-height:360px;overflow:auto">${Object.entries(by).map(([g,ts])=>`<div class="sub">${esc(g)}</div>`+ts.map(t=>`<div style="padding:4px 10px;font-size:13px;display:flex;gap:8px"><span class="n" style="font-family:Consolas,monospace">${esc(t.tool||t.id)}</span><span class="sp" style="flex:1"></span><span class="tag ${t.permission==="ask"?"warn":"ok"}">${t.permission==="ask"?"asks":"allowed"}</span></div>`).join("")).join("")}</div><button onclick="closeMenus();go('connectors')">${ic.plug}Add connectors</button>`)}
 async function send(){if(BUSY)return;const t=$("ta");const text=t.value.trim();if(!text&&!DRAFT.links.length&&!DRAFT.files.length)return;
  BUSY=true;$("sendb").disabled=true;
- try{if(!CUR){const c=await api("/admin/chat/chats",{method:"POST",body:{}});CUR={...c,messages:[]};history.replaceState(null,"","#chat/"+c.id);$("title").textContent="New chat";
+ try{if(!CUR){const c=await api("/admin/chat/chats",{method:"POST",body:DRAFT.space?{space:DRAFT.space}:{}});CUR={...c,messages:[]};history.replaceState(null,"","#chat/"+c.id);$("title").textContent="New chat";
    if(DRAFT.project){try{await api(`/admin/chat/chats/${c.id}`,{method:"PATCH",body:{project:DRAFT.project}});CUR={...(await api("/admin/chat/chats/"+c.id)),messages:[]}}catch(e){toast(String(e.message||e))}}composer(false)}
   const body={text,links:DRAFT.links,files:DRAFT.files,skill:DRAFT.skill};
   CUR.messages.push({id:-1,role:"user",content:text,meta:{attachments:DRAFT.links.map(u=>({type:"link",url:u,title:u})).concat(DRAFT.files.map(f=>({type:"file",name:f.name}))),skill:DRAFT.skill}});
@@ -392,17 +447,27 @@ async function send(){if(BUSY)return;const t=$("ta");const text=t.value.trim();i
   const r=await api(`/admin/chat/chats/${CUR.id}/send`,{method:"POST",body});await refresh()}
  catch(e){await refresh().catch(()=>{})}finally{BUSY=false;if($("sendb"))$("sendb").disabled=false;loadChats()}}
 function thinking(){renderMsgs(`<div class="msg assistant"><div class="typing"><i></i><i></i><i></i></div></div>`)}
-async function refresh(){if(!CUR)return;CUR=await api("/admin/chat/chats/"+CUR.id);$("title").textContent=CUR.title;renderMsgs()}
+async function refresh(){if(!CUR)return;CUR=await api("/admin/chat/chats/"+CUR.id);titleBar();renderMsgs()}
+function titleBar(){const t=$("title");if(!CUR){t.textContent="";return}t.innerHTML=(CUR.space?`<a href="#project/${esc(CUR.space.id)}" style="color:var(--mute);text-decoration:none">${esc(CUR.space.name)}</a> <span style="color:var(--mute)">/</span> `:"")+esc(CUR.title)}
 async function decide(mid,approve,always){if(BUSY)return;BUSY=true;thinking();try{await api(`/admin/chat/chats/${CUR.id}/approve`,{method:"POST",body:{message_id:mid,approve,always}})}catch{}finally{BUSY=false;await refresh();loadSide();status()}}
 async function retry(){if(BUSY)return;BUSY=true;const i=CUR.messages.map(m=>m.role).lastIndexOf("user");CUR.messages=CUR.messages.slice(0,i+1);thinking();
  try{await api(`/admin/chat/chats/${CUR.id}/retry`,{method:"POST"})}catch{}finally{BUSY=false;refresh()}}
 /* ---------- skills page ---------- */
 let SKTAB="instructions";
+let SYNC=null;
+function syncBar(){const s=SYNC;if(!s)return"";const when=s.last_run?new Date(s.last_run*1000).toLocaleTimeString():"not yet";
+ return `<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" ${s.enabled?"checked":""} onchange="syncSet(this.checked)"> <b>Keep in step with Claude</b></label>
+ <span class="muted">${s.enabled?`${s.connectors} connector(s) and ${s.skills} skill(s) synced from your Claude desktop app and Claude Code${s.plugins.length?`, including ${s.plugins.length} plugin(s)`:""}. New ones appear within a minute. Last check ${esc(when)}.`:"Off: changes in Claude are not picked up."}</span><span class="sp"></span>
+ <button class="btn ghost" onclick="syncNow()">Check now</button>${s.errors.length?`<span class="tag warn" title="${esc(s.errors.join("\n"))}">${s.errors.length} problem(s)</span>`:""}</div>`}
+async function syncRefresh(){try{SYNC=await api("/admin/claude-sync")}catch(e){SYNC=null}}
+async function syncSet(on){SYNC=await api("/admin/claude-sync",{method:"POST",body:{enabled:on}});toast(on?"Syncing from Claude":"Sync from Claude is off");reloadSyncPage()}
+async function syncNow(){SYNC=await api("/admin/claude-sync/run",{method:"POST"});toast(SYNC.last_changes.length?SYNC.last_changes[0]:"Up to date");reloadSyncPage()}
+function reloadSyncPage(){document.querySelector(".navbtn.on")?.dataset.nav==="skills"?pageSkills():pageConnectors()}
 async function pageSkills(){setNav("skills");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
- const [isk,tools]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools")]);ISK=isk;TOOLS=tools;
+ const [isk,tools]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools"),syncRefresh()]);ISK=isk;TOOLS=tools;
  const sb=tools.filter(t=>t.kind==="skill");
  let body="";
- if(SKTAB==="instructions"){body=`<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="btn" onclick="uploadSkill()">Upload skill (.zip or SKILL.md)</button><button class="btn ghost" onclick="writeSkill()">Write a skill</button><button class="btn ghost" onclick="importSkills()">Import from Claude</button></div>`+
+ if(SKTAB==="instructions"){body=syncBar()+`<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="btn" onclick="uploadSkill()">Upload skill (.zip or SKILL.md)</button><button class="btn ghost" onclick="writeSkill()">Write a skill</button><button class="btn ghost" onclick="importSkills()">Import from Claude</button></div>`+
   (isk.length?isk.map(s=>`<div class="card"><div class="h"><b>${esc(s.title||s.name)}</b>${s.source?`<span class="tag">${esc(s.source)}</span>`:""}${s.warnings.length?`<span class="tag warn" title="${esc(s.warnings.join("\n"))}">${s.warnings.length} warning(s)</span>`:""}<span class="sp"></span>
    <button class="btn ghost small" onclick="viewSkill('${esc(s.name)}')">View</button><button class="iconbtn" title="Remove" onclick="rmSkill('${esc(s.name)}')">${ic.trash}</button>
    <div class="switch ${s.enabled?"on":""}" role="switch" tabindex="0" onclick="enSkill('${esc(s.name)}',${!s.enabled})"></div></div><div class="d">${esc(s.description)}</div>
@@ -436,8 +501,9 @@ async function doImportSkills(){const names=[...document.querySelectorAll("#moda
  toast(`Imported ${r.added.length}`+(r.errors.length?`; ${r.errors.length} failed: ${r.errors[0]}`:""));closeModal();pageSkills()}
 /* ---------- connectors page ---------- */
 async function pageConnectors(){setNav("connectors");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
- const cs=await api("/admin/connectors");
+ const [cs]=await Promise.all([api("/admin/connectors"),syncRefresh()]);
  $("view").innerHTML=`<div class="page"><h2>Connectors</h2><p class="lead">Connect MCP servers to give the assistant tools for your apps and data, the same kind of connectors Claude uses. Every tool asks before it runs unless you allow it; tools that can pay, send or delete always ask.</p>
+ ${syncBar()}
  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn" onclick="addConn()">Add connector</button><button class="btn ghost" onclick="importConns()">Import from Claude</button></div>
  ${cs.length?cs.map(connCard).join(""):`<div class="empty">No connectors yet. Add a remote MCP server URL, a local MCP program, or import the ones you set up in Claude.</div>`}</div>`}
 function connCard(c){const ok=!c.last_error&&c.tools.length;

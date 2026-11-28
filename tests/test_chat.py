@@ -680,3 +680,274 @@ def test_lora_trainer_guards_and_converter_extraction(tmp_path):
     got = sorted(p.relative_to(t.converter).as_posix() for p in t.converter.rglob("*") if p.is_file())
     assert got == ["convert_lora_to_gguf.py", "gguf-py/gguf/__init__.py"]
     assert not (tmp_path / "escape.py").exists()
+
+
+# ---------- keeping in step with Claude ----------
+def _skill(d, name, desc="does things"):
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {desc}\n---\nBody of {name}\n", encoding="utf-8")
+
+
+def _fake_claude(tmp_path):
+    import json as _j
+    home = tmp_path / "userhome"
+    (home / ".claude" / "skills").mkdir(parents=True)
+    (home / ".claude.json").write_text(_j.dumps({"mcpServers": {"files": {"command": "npx", "args": ["fs-server"]}}}))
+    _skill(home / ".claude" / "skills" / "notes", "notes")
+    plug = home / ".claude" / "plugins" / "cache" / "mkt" / "tools" / "1.0"
+    _skill(plug / "skills" / "report", "report")
+    (plug / ".mcp.json").write_text(_j.dumps({"mcpServers": {"db": {"command": "${CLAUDE_PLUGIN_ROOT}/db.exe"}}}))
+    (home / ".claude" / "plugins" / "installed_plugins.json").write_text(_j.dumps(
+        {"version": 2, "plugins": {"tools@mkt": [{"installPath": str(plug), "version": "1.0"}]}}))
+    return home, plug
+
+
+def test_claude_sync_adds_updates_removes(tmp_path):
+    import json as _j
+    from fusion_os.chat import ConnectorManager, InstructionSkills
+    from fusion_os.chat.claude_sync import ClaudeSync
+    home, plug = _fake_claude(tmp_path)
+    conns = ConnectorManager(tmp_path / "c.json")
+    instr = InstructionSkills(tmp_path / "isk")
+    mine = conns.add("my own", "stdio", command="python", args=["mine.py"])  # added by hand: never touched
+    instr.add_text("---\nname: handmade\ndescription: mine\n---\nx")
+    sync = ClaudeSync(conns, instr, tmp_path / "sync.json", env={"HOME": str(home)}, connect=False)
+    st = sync.run()
+    names = sorted(c["name"] for c in conns.list())
+    assert names == ["files", "my own", "tools: db"]
+    db = next(c for c in conns.list() if c["name"] == "tools: db")
+    assert db["command"] == str(plug) + "/db.exe" and db["source"].startswith("claude-sync:")
+    assert sorted(s["name"] for s in instr.list()) == ["handmade", "notes", "report"]
+    assert st["plugins"] == ["tools@mkt"] and st["connectors"] == 2 and st["skills"] == 2
+
+    # nothing changed: no work
+    assert sync.run()["last_changes"] == st["last_changes"]
+
+    # the person's choices survive a change in Claude
+    files = next(c for c in conns.list() if c["name"] == "files")
+    conns.restore_settings(files["id"], False, {"read": "allow"})
+    instr.set_enabled("notes", False)
+    (home / ".claude.json").write_text(_j.dumps({"mcpServers": {"files": {"command": "npx", "args": ["fs-v2"]}}}))
+    _skill(home / ".claude" / "skills" / "notes", "notes", "changed")
+    _skill(home / ".claude" / "skills" / "fresh", "fresh")  # newly installed in Claude
+    sync.run()
+    files2 = next(c for c in conns.list() if c["name"] == "files")
+    assert files2["args"] == ["fs-v2"] and files2["enabled"] is False
+    assert conns.get(files2["id"])["permissions"] == {"read": "allow"}
+    notes = next(s for s in instr.list() if s["name"] == "notes")
+    assert notes["description"] == "changed" and notes["enabled"] is False
+    assert "fresh" in [s["name"] for s in instr.list()]
+
+    # plugin disabled in Claude: its skill and server go; hand-made items stay
+    (home / ".claude" / "settings.json").write_text(_j.dumps({"enabledPlugins": {"tools@mkt": False}}))
+    sync.run()
+    assert sorted(c["name"] for c in conns.list()) == ["files", "my own"]
+    assert sorted(s["name"] for s in instr.list()) == ["fresh", "handmade", "notes"]
+    assert conns.get(mine["id"])
+
+    # turned off: nothing more is picked up
+    sync.set_enabled(False)
+    _skill(home / ".claude" / "skills" / "later", "later")
+    sync.run(force=True)
+    assert "later" not in [s["name"] for s in instr.list()]
+
+
+def test_claude_sync_api(tmp_path, monkeypatch):
+    home, _ = _fake_claude(tmp_path)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    ctl = SecurityController(tmp_path / "s")
+    app = create_app(ctl, NO_DOCKER, memory=MemoryStore(tmp_path / "m.db"))
+    app.state.claude_sync.connect = False
+    c = TestClient(app)
+    h = {"Authorization": f"Bearer {ctl.admin_token()}"}
+    assert c.get("/admin/claude-sync").status_code == 403
+    r = c.post("/admin/claude-sync/run", headers=h).json()
+    assert r["enabled"] and r["skills"] == 2 and r["connectors"] == 2
+    assert {s["name"] for s in c.get("/admin/iskills", headers=h).json()} == {"notes", "report"}
+    assert c.post("/admin/claude-sync", json={"enabled": False}, headers=h).json()["enabled"] is False
+    assert c.get("/admin/claude-sync", headers=h).json()["enabled"] is False
+
+
+# ---------- using the person's computer ----------
+class FakePS:
+    """Stands in for Windows PowerShell: records each action and its decoded arguments."""
+
+    def __init__(self, fail=None):
+        self.calls, self.fail = [], fail
+
+    def __call__(self, script, timeout):
+        import re as _re
+        b64 = _re.search(r"FromBase64String\('([A-Za-z0-9+/=]*)'\)", script).group(1)
+        args = json.loads(base64.b64decode(b64))
+        from fusion_os.chat.computer import SCRIPTS
+        action = next(k for k, v in SCRIPTS.items() if script.endswith(v))
+        self.calls.append((action, args))
+        if action == self.fail:
+            return 1, "", "boom"
+        if action == "screenshot":
+            Path(args["path"]).write_bytes(b"\xff\xd8jpeg")
+            return 0, json.dumps({"left": 0, "top": 0, "width": 2560, "height": 1440, "scale": 0.5, "w": 1280,
+                                  "h": 720, "foreground": "Untitled - Notepad"}), ""
+        if action == "list_windows":
+            return 0, json.dumps([{"title": "Untitled - Notepad", "app": "notepad", "active": True}]), ""
+        if action == "read_window":
+            return 0, json.dumps({"title": "Notepad", "items": [
+                {"d": 1, "kind": "Button", "name": "Save", "x": 200, "y": 100, "w": 40, "h": 20, "enabled": True}]}), ""
+        return 0, json.dumps({"ok": True}), ""
+
+
+def test_computer_actions_map_coordinates_and_keys(tmp_path):
+    from fusion_os.chat.computer import ComputerError, ComputerUse, keys_to_vk
+    assert keys_to_vk("ctrl+shift+s") == [0x11, 0x10, ord("S")] and keys_to_vk("win+r") == [0x5B, ord("R")]
+    with pytest.raises(ComputerError):
+        keys_to_vk("ctrl+nosuchkey")
+    assert not ComputerUse(tmp_path, FakePS(), platform="posix").available()
+    with pytest.raises(ComputerError):
+        ComputerUse(tmp_path, FakePS(), platform="posix").do("screenshot", {})
+    ps = FakePS()
+    cu = ComputerUse(tmp_path / "shots", ps, platform="nt")
+    s = cu.do("screenshot", {})
+    assert cu.shot_path(s["image"]).is_file() and "Notepad" in s["text"]
+    rw = cu.do("read_window", {})
+    assert 'Button "Save" at (100, 50)' in rw["text"], "screen pixels are shown in screenshot pixels"
+    cu.do("click", {"x": 100, "y": 50, "double": True})
+    act, a = [c for c in ps.calls if c[0] == "click"][0]
+    assert (a["x"], a["y"], a["times"]) == (200, 100, 2), "screenshot pixels go back to screen pixels"
+    with pytest.raises(ComputerError):
+        cu.do("click", {"x": 5000, "y": 1})
+    text = "it's {50%} + (x)\n'; Remove-Item C:\\ -Recurse #"
+    cu.do("type_text", {"text": text})
+    script_args = [c for c in ps.calls if c[0] == "type_text"][0][1]
+    assert script_args == {"text": text}, "text reaches PowerShell only as data"
+    cu.do("press_keys", {"keys": "ctrl+s"})
+    assert [c for c in ps.calls if c[0] == "press_keys"][0][1]["vk"] == [0x11, ord("S")]
+    with pytest.raises(ComputerError):
+        cu.shot_path("../../secret.jpg")
+    with pytest.raises(ComputerError):
+        ComputerUse(tmp_path, FakePS(fail="list_windows"), platform="nt").do("list_windows", {})
+
+
+def test_computer_use_is_off_by_default_and_asks_before_acting(parts):
+    from fusion_os.chat.computer import ComputerUse
+    ps = FakePS()
+    cu = ComputerUse(parts["tmp"] / "shots", ps, platform="nt")
+    r = Script([call("computer_screenshot"), call("computer_type_text", text="hello"), "Typed it.",
+                call("computer_press_keys", keys="ctrl+s"), "Saved."])
+    b = Assistant(parts["ctl"], parts["agent"], parts["store"], r, parts["conns"], parts["instr"], computer=cu)
+    chat = parts["store"].create()
+    assert not [t for t in b.tools(chat["id"]) if t["kind"] == "computer"], "off until the person turns it on"
+    parts["store"].update(chat["id"], settings={"computer": True})
+    perms = {t["id"]: t["permission"] for t in b.tools(chat["id"]) if t["kind"] == "computer"}
+    assert perms["computer_screenshot"] == "allow" and perms["computer_click"] == "ask"
+    out = b.send(chat["id"], "type hello in notepad")
+    shot, pend = out[1], out[2]
+    assert shot["meta"]["status"] == "done" and shot["meta"]["image"].endswith(".jpg")
+    assert pend["meta"]["status"] == "pending" and "hello" in pend["meta"]["preview"]
+    assert not [c for c in ps.calls if c[0] == "type_text"], "nothing typed before approval"
+    out = b.resume(chat["id"], pend["id"], approve=True, always=True)
+    assert [c for c in ps.calls if c[0] == "type_text"] and out[0]["meta"]["status"] == "done"
+    assert parts["store"].get(chat["id"])["settings"]["computer_auto"] is True
+    out = b.send(chat["id"], "now save it")
+    assert out[1]["meta"]["status"] == "done", "allowed for this chat: no more asking"
+    parts["ctl"].emergency_stop("admin", "test")
+    assert b._run_tool({"id": "computer_click", "kind": "computer", "action": "click", "permission": "allow"},
+                       {"x": 1, "y": 1}, None, chat["id"])["status"] == "denied"
+
+
+def test_computer_settings_api(tmp_path):
+    ctl = SecurityController(tmp_path / "s")
+    app = create_app(ctl, NO_DOCKER, memory=MemoryStore(tmp_path / "m.db"))
+    c = TestClient(app)
+    h = {"Authorization": f"Bearer {ctl.admin_token()}"}
+    chat = c.post("/admin/chat/chats", json={}, headers=h).json()
+    got = c.get(f"/admin/chat/chats/{chat['id']}", headers=h).json()
+    assert got["computer"]["on"] is False
+    # "without asking" can't be switched on before computer use itself
+    s = c.patch(f"/admin/chat/chats/{chat['id']}", json={"computer_auto": True}, headers=h).json()["settings"]
+    assert not s.get("computer_auto")
+    c.patch(f"/admin/chat/chats/{chat['id']}", json={"computer": True, "computer_auto": True}, headers=h)
+    s = c.patch(f"/admin/chat/chats/{chat['id']}", json={"computer": False}, headers=h).json()["settings"]
+    assert s["computer"] is False and s["computer_auto"] is False
+    assert c.get("/admin/computer/shot/..%2Fx.jpg", headers=h).status_code in (400, 404)
+    assert c.get("/admin/computer/shot/" + "a" * 32 + ".jpg", headers=h).status_code == 404
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="real Windows desktop only")
+def test_computer_use_live_on_windows(tmp_path):
+    """On the Windows CI runner: the real PowerShell scripts parse and run against the desktop."""
+    import subprocess as sp
+    import time as _t
+    from fusion_os.chat.computer import ComputerError, ComputerUse
+    cu = ComputerUse(tmp_path / "shots")
+    try:
+        s = cu.do("screenshot", {})
+    except ComputerError as exc:
+        if "handle" in str(exc).lower():
+            pytest.skip(f"no interactive desktop here: {exc}")
+        raise
+    assert cu.shot_path(s["image"]).stat().st_size > 1000
+    p = sp.Popen(["notepad.exe"])
+    try:
+        _t.sleep(2)
+        wins = cu.do("list_windows", {})["text"]
+        assert "notepad" in wins.lower()
+        title = next(ln for ln in wins.splitlines() if "notepad" in ln.lower()).strip("- ").split(" (")[0]
+        cu.do("focus_window", {"title": title})
+        cu.do("type_text", {"text": "hello {from} (AI) 100%"})
+        cu.do("press_keys", {"keys": "ctrl+a"})
+        cu.do("scroll", {"amount": -1})
+        r = cu.do("read_window", {"title": title})
+        assert "Window:" in r["text"] and r["text"].count("\n") >= 1
+    finally:
+        sp.run(["taskkill", "/F", "/IM", "notepad.exe"], capture_output=True)
+        p.kill()
+
+
+# ---------- projects (instructions + knowledge, like Claude's) ----------
+def test_project_instructions_and_knowledge_reach_the_model(parts):
+    from fusion_os.chat.spaces import SpaceError, Spaces
+    sp = Spaces(parts["tmp"] / "projects")
+    p = sp.create("Garden", "my allotment", "Always answer in metric units.")
+    sp.add_file(p["id"], "plants.md", "Tomatoes need 6 hours of sun.")
+    with pytest.raises(SpaceError):
+        sp.add_file(p["id"], "a:b", "x")
+    assert sp.add_file(p["id"], "../evil.md", "x")["name"] == "evil.md", "paths are cut to a file name"
+    r = Script([call("read_project_file", name="plants.md"), "6 hours."])
+    b = Assistant(parts["ctl"], parts["agent"], parts["store"], r, parts["conns"], parts["instr"], spaces=sp)
+    chat = parts["store"].create(settings={"space": p["id"]})
+    out = b.send(chat["id"], "how much sun for tomatoes?")
+    system = r.seen[0][0]
+    assert "Always answer in metric units." in system and "Tomatoes need 6 hours" in system
+    assert "project-file:plants.md" in system, "knowledge is passed as untrusted text"
+    assert out[1]["meta"]["status"] == "done" and "Tomatoes" in out[1]["meta"]["output"]
+    # big knowledge: only the matching passages go in
+    sp.add_file(p["id"], "big.txt", ("filler words about nothing. " * 2000) + "The secret compost ratio is 3:1.")
+    docs, full = sp.knowledge(p["id"], "compost ratio", budget=4000)
+    assert not full and any("compost ratio is 3:1" in t for _, t in docs)
+    other = parts["store"].create()
+    assert b.space(other["id"]) is None
+
+
+def test_projects_api(tmp_path):
+    ctl = SecurityController(tmp_path / "s")
+    app = create_app(ctl, NO_DOCKER, memory=MemoryStore(tmp_path / "m.db"))
+    c = TestClient(app)
+    h = {"Authorization": f"Bearer {ctl.admin_token()}"}
+    assert c.get("/admin/projects").status_code == 403
+    p = c.post("/admin/projects", json={"name": "Work", "instructions": "Be brief."}, headers=h).json()
+    assert c.post(f"/admin/projects/{p['id']}/files", json={"name": "notes.txt", "content": "hello"},
+                  headers=h).json()["size"] == 5
+    chat = c.post("/admin/chat/chats", json={"space": p["id"]}, headers=h).json()
+    assert c.get(f"/admin/chat/chats/{chat['id']}", headers=h).json()["space"]["name"] == "Work"
+    assert [x["id"] for x in c.get(f"/admin/chat/chats?space={p['id']}", headers=h).json()] == [chat["id"]]
+    assert c.get("/admin/projects", headers=h).json()[0]["chats"] == 1
+    assert c.patch(f"/admin/projects/{p['id']}", json={"instructions": "Be very brief."},
+                   headers=h).json()["instructions"] == "Be very brief."
+    assert c.get(f"/admin/projects/{p['id']}/files/notes.txt", headers=h).json()["content"] == "hello"
+    assert c.get(f"/admin/projects/{p['id']}/files/..%2F..%2Fproject.json", headers=h).status_code == 404
+    assert c.post("/admin/chat/chats", json={"space": "000000000000"}, headers=h).status_code == 404
+    c.delete(f"/admin/projects/{p['id']}", headers=h)
+    assert "space" not in c.get(f"/admin/chat/chats/{chat['id']}", headers=h).json()["settings"]

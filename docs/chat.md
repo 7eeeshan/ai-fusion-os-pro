@@ -105,3 +105,29 @@ loaded with a 32k-token context. Connectors added on claude.ai belong to your An
   original weights from Hugging Face (~15 GB for a 7B model), train (local models pause meanwhile; held-out loss is
   measured before and after), then deploy if you choose. The engine loads the model with `--lora-scaled`; Roll back
   restores the plain model. On a 6 GB GPU a 7B model trains with part of it in RAM, so expect hours per run.
+
+## Kept in step with Claude
+
+Connectors and Skills show **Keep in step with Claude** (on by default). The app reads, and never changes, what you set
+up in Claude: MCP servers in `claude_desktop_config.json` (including the Microsoft Store copy) and `~/.claude.json`,
+skills in `~/.claude/skills`, and the Claude Code plugins listed in `~/.claude/plugins/installed_plugins.json`
+(only enabled ones), with their skills and MCP servers. It checks on start and then every minute: new items are
+added, changed ones updated (keeping the permissions you gave), removed ones removed. Items you added by hand are
+never touched. Connectors added on claude.ai belong to your Anthropic account, not this PC, so they can't be synced;
+add them here by URL. Set `FUSION_OS_CLAUDE_SYNC=0` to stop the background check.
+
+## Using your computer
+
+In a chat, the **Computer** button turns on computer use for that chat only (Windows). The assistant can then take
+screenshots (shown in the chat), list windows, read a window's controls as text (Windows UI Automation, so the local
+text model can find buttons), open apps, switch windows, click, type, press keys and scroll, as you. Looking is
+allowed; every action shows what it will do and waits for **Approve**, unless you choose **Allow for this chat** or
+tick "Act without asking each time". The emergency stop blocks it immediately. Policy actions: `computer.observe`,
+`computer.control`, `computer.control.preapproved` (default policy v6).
+
+## Projects and previews
+
+**Projects** group chats with shared instructions and knowledge files (text, up to 2 MB each). Small knowledge sets
+go to the model in full; for larger ones it gets the passages that match the request and can read any file with
+`read_project_file`. HTML or SVG in an answer gets a **Preview** button that opens it in a side panel, sandboxed with
+no network and no access to the app.

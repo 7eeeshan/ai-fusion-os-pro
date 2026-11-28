@@ -90,7 +90,9 @@ class Assistant:
     def __init__(self, ctl, agent: dict, store: ChatStore, router, connectors: ConnectorManager,
                  instructions: InstructionSkills, skills=None, web=None, max_tokens: int = 3000,
                  code: Optional[CodeTools] = None, data_home=None, workspace=None, opencode=None, overlay=None,
-                 lessons=None):
+                 lessons=None, computer=None, spaces=None):
+        self.spaces = spaces  # Spaces: Claude-style projects with instructions and knowledge files
+        self.computer = computer  # ComputerUse: the person's own Windows PC, only in chats where they turn it on
         self.ctl, self.agent, self.store, self.router = ctl, agent, store, router
         self.connectors, self.instructions, self.skills, self.web = connectors, instructions, skills, web
         self.max_tokens = max_tokens
@@ -177,6 +179,11 @@ class Assistant:
                       "the diff, and it can always be undone. Changes may not touch approvals, policy, tokens or "
                       "outside web addresses.", "hint": '{"page": "chat.html", "edits": [{"old": string, "new": '
                       'string}], "note": string}', "permission": "ask", "kind": "build"})
+        t += self._computer_tools(chat_id)
+        sp = self.space(chat_id)
+        if sp and sp["files"]:
+            t.append({"id": "read_project_file", "description": "Read one of this project's knowledge files in full.",
+                      "hint": '{"name": string}', "permission": "allow", "kind": "builtin"})
         t.append({"id": "add_connector", "description": "Propose adding a remote MCP connector (https URL) that "
                   "would give you tools you are missing. The person approves it first.",
                   "hint": '{"name": string, "url": string}', "permission": "ask", "kind": "build"})
@@ -192,6 +199,82 @@ class Assistant:
                       "connector": c["connector"], "tool": c["tool"]})
         return t
 
+    COMPUTER_TOOLS = [
+        ("screenshot", "Take a screenshot of the person's screen (they see it in the chat).", "{}"),
+        ("list_windows", "List the open windows and which one is active.", "{}"),
+        ("read_window", "Read a window's controls (buttons, fields, menus, text) with their positions, as text. "
+         "Leave out title for the active window.", '{"title"?: string}'),
+        ("open_app", "Open an app, file or settings page on the person's PC (e.g. notepad, calc, explorer, a full "
+         "path, ms-settings:display).", '{"app": string, "args"?: [string]}'),
+        ("focus_window", "Bring a window to the front.", '{"title": string}'),
+        ("click", "Click at a point given in the latest screenshot's pixels (or read_window positions).",
+         '{"x": int, "y": int, "button"?: "left"|"right", "double"?: bool}'),
+        ("click_element", "Click a control by its name, as read_window lists it.", '{"name": string, "title"?: string}'),
+        ("type_text", "Type text into the focused field.", '{"text": string}'),
+        ("press_keys", "Press a key or combination, e.g. enter, ctrl+s, alt+tab, win+r.", '{"keys": string}'),
+        ("scroll", "Scroll (positive is up, negative down), optionally at a point.",
+         '{"amount": int, "x"?: int, "y"?: int}'),
+    ]
+
+    def space(self, chat_id: Optional[str]) -> Optional[dict]:
+        if self.spaces is None or not chat_id:
+            return None
+        sid = ((self.store.get(chat_id) or {}).get("settings") or {}).get("space")
+        if not sid:
+            return None
+        try:
+            return self.spaces.get(sid)
+        except (KeyError, OSError, ValueError):
+            return None
+
+    def computer_settings(self, chat_id: Optional[str]) -> dict:
+        s = ((self.store.get(chat_id) or {}).get("settings") or {}) if chat_id else {}
+        avail = self.computer is not None and self.computer.available()
+        return {"available": avail, "on": avail and bool(s.get("computer")),
+                "auto": avail and bool(s.get("computer")) and bool(s.get("computer_auto"))}
+
+    def _computer_tools(self, chat_id: Optional[str]) -> list[dict]:
+        cs = self.computer_settings(chat_id)
+        if not cs["on"]:
+            return []
+        from .computer import OBSERVE
+        ctrl = "allow" if cs["auto"] else "ask"
+        return [{"id": f"computer_{a}", "description": d, "hint": h, "kind": "computer", "action": a,
+                 "permission": "allow" if a in OBSERVE else ctrl} for a, d, h in self.COMPUTER_TOOLS]
+
+    def _computer(self, t: dict, args: dict, approval_id: Optional[str], chat_id: Optional[str]) -> dict:
+        from .computer import OBSERVE, ComputerError
+        if not self.computer_settings(chat_id)["on"]:
+            return {"status": "denied", "output": "using the computer is off in this chat"}
+        act = t["action"]
+        observe = act in OBSERVE
+        auto = t["permission"] == "allow" and approval_id is None
+        action = "computer.observe" if observe else "computer.control.preapproved" if auto else "computer.control"
+        digest = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()
+        shown = {k: (v if k != "text" else (str(v)[:300] + ("…" if len(str(v)) > 300 else ""))) for k, v in
+                 args.items()}
+        preview = f"{act.replace('_', ' ')}: " + json.dumps(shown, ensure_ascii=False)
+        v = self._gate(action, "standard", act, {"action": act, "arguments_sha256": digest, "chat_id": chat_id},
+                       approval_id)
+        if v.effect == "pending_approval":
+            return {"status": "pending", "approval_id": v.approval_id, "output": "", "preview": preview,
+                    "summary": preview[:120]}
+        if not v.allowed:
+            return {"status": "denied", "output": f"not allowed: {v.reason}"}
+        try:
+            r = self.computer.do(act, args)
+        except ComputerError as exc:
+            return {"status": "error", "output": str(exc)[:800]}
+        self.ctl.audit.append(self.agent["agent_id"], "computer." + ("looked" if observe else "acted"),
+                              {"action": act, "arguments_sha256": digest, "chat_id": chat_id})
+        out = {"status": "done", "output": wrap(r["text"][:20000], f"computer:{act}", "tool").render(),
+               "summary": r.get("summary", "")}
+        if r.get("image"):
+            out["image"] = r["image"]
+        if not observe:
+            out["preview"] = preview
+        return out
+
     def system_prompt(self, tools: list[dict], pinned_skill: Optional[str], chat_id: Optional[str] = None) -> str:
         parts = [BASE_PROMPT, time.strftime("Today is %A, %d %B %Y.")]
         proj = self.project(chat_id)
@@ -199,6 +282,31 @@ class Assistant:
             note = " and edits are applied right away (the person turned on auto-approve)" if proj["auto_edit"] \
                 else " and approves it before it is written"
             parts.append(CODE_PROMPT.format(project=proj["folder"], edit_note=note))
+        sp = self.space(chat_id)
+        if sp:
+            parts.append(f"\n## Project: {sp['name']}\nThis chat is in the person's project \"{sp['name']}\"."
+                         + (f" {sp['description']}" if sp.get("description") else ""))
+            if (sp.get("instructions") or "").strip():
+                parts.append("The person's instructions for every chat in this project:\n" + sp["instructions"][:20000])
+            if sp["files"]:
+                last = next((m["content"] for m in reversed(self.store.messages(chat_id)) if m["role"] == "user"),
+                            "") if chat_id else ""
+                docs, full = self.spaces.knowledge(sp["id"], last)
+                parts.append("\nProject knowledge (" + ("all of it" if full else
+                             "the passages that best match this request; read_project_file reads a whole file")
+                             + "). Files: " + ", ".join(f["name"] for f in sp["files"][:60]))
+                for name, text in docs:
+                    parts.append(wrap(text, f"project-file:{name}", "user_upload").render())
+        cs = self.computer_settings(chat_id)
+        if cs["on"]:
+            parts.append("\n## Using the person's computer\nThe person turned on computer use for this chat: you can "
+                         "operate their Windows PC with the computer_* tools, but only to do what they asked. Work in "
+                         "small steps: list_windows or read_window to see what is there, act, then check the result. "
+                         "Prefer click_element and keyboard shortcuts over guessing coordinates. "
+                         + ("They allowed actions without asking in this chat." if cs["auto"] else
+                            "Each action asks the person first.")
+                         + " Never type passwords or payment details, and stop and ask if something unexpected "
+                         "appears (a login, a payment, a security prompt).")
         skills = self.instructions.enabled()
         if skills:
             parts.append("\n## Skills\nThese skills hold instructions for specific kinds of work. When the request "
@@ -239,6 +347,8 @@ class Assistant:
         try:
             if t["kind"] == "code":
                 return self._code(t, args, approval_id, chat_id)
+            if t["kind"] == "computer":
+                return self._computer(t, args, approval_id, chat_id)
             if t["id"] == "web_fetch":
                 r = self.web.fetch(self.agent, str(args.get("url", "")), "research")
                 return {"status": "done", "output": f"{r.get('title') or ''}\n{r['content']}"[:40000],
@@ -248,6 +358,14 @@ class Assistant:
                 text = "\n".join(f"- {h['title']} {h['url']}\n  {h.get('snippet') or ''}" for h in hits)
                 return {"status": "done", "output": wrap(text, "web-search", "web").render(),
                         "summary": f"{len(hits)} results"}
+            if t["id"] == "read_project_file":
+                sp = self.space(chat_id)
+                if not sp:
+                    return {"status": "error", "output": "this chat is not in a project"}
+                name = str(args.get("name", ""))
+                body = self.spaces.read_file(sp["id"], name)
+                return {"status": "done", "output": wrap(body[:60000], f"project-file:{name}", "user_upload").render(),
+                        "summary": name}
             if t["id"] == "read_skill":
                 body = self.instructions.read(str(args.get("name", "")), str(args.get("file") or "SKILL.md"))
                 return {"status": "done", "output": body[:40000], "summary": args.get("name")}
@@ -620,6 +738,10 @@ class Assistant:
             meta.update(status="denied", output="The person declined this tool call." if t else "tool no longer available")
             self.store.set_meta(message_id, meta)
         else:
+            if always and t["kind"] == "computer":
+                st = (self.store.get(chat_id) or {}).get("settings") or {}
+                self.store.update(chat_id, settings={**st, "computer_auto": True})
+                self.ctl.audit.append("admin", "chat.computer_auto", {"chat_id": chat_id, "on": True})
             if always and t["kind"] == "connector":
                 try:
                     self.connectors.set_permission(t["connector"], t["tool"], "allow")
@@ -629,6 +751,8 @@ class Assistant:
             meta.update(status=r["status"], output=r.get("output", ""), summary=r.get("summary", ""))
             if r.get("preview") is not None:
                 meta["preview"] = r["preview"]
+            if r.get("image"):
+                meta["image"] = r["image"]
             self.store.set_meta(message_id, meta)
         return [self.store.get_message(message_id)] + self._loop(chat_id)
 
@@ -665,6 +789,8 @@ class Assistant:
                     "summary": r.get("summary", ""), "kind": t["kind"], "label": t["description"][:120]}
             if r.get("preview") is not None:
                 meta["preview"] = r["preview"]
+            if r.get("image"):
+                meta["image"] = r["image"]
             if r["status"] == "pending":
                 meta["approval_id"] = r["approval_id"]
                 new.append(self.store.add(chat_id, "tool", "", meta))

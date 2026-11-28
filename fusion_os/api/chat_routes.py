@@ -15,6 +15,9 @@ from ..chat import (Assistant, ChatStore, ConnectorManager, InstructionSkills, c
 from ..chat.code import CodeError, CodeTools, check_project
 from ..chat.opencode import OpenCodeLink
 from ..chat.claude_code import ClaudeCodeLink
+from ..chat.claude_sync import ClaudeSync
+from ..chat.computer import ComputerError, ComputerUse
+from ..chat.spaces import SpaceError, Spaces
 from ..chat.learning import LessonStore
 from ..models.lora import LoraTrainer
 from ..chat.self_ui import AppOverlay, UIChangeError
@@ -23,6 +26,18 @@ from ..sandbox import AutoSandbox
 
 class NewChatBody(BaseModel):
     title: str = "New chat"
+    space: Optional[str] = Field(None, max_length=40)
+
+
+class SpaceBody(BaseModel):
+    name: Optional[str] = Field(None, max_length=120)
+    description: Optional[str] = Field(None, max_length=2000)
+    instructions: Optional[str] = Field(None, max_length=40000)
+
+
+class SpaceFileBody(BaseModel):
+    name: str = Field(max_length=200)
+    content: str = Field(max_length=2_100_000)
 
 
 class RateBody(BaseModel):
@@ -30,6 +45,10 @@ class RateBody(BaseModel):
     rating: int = Field(..., ge=-1, le=1)
     note: str = Field("", max_length=4000)  # what was wrong / what to do instead: becomes a lesson
     better: str = Field("", max_length=20000)  # a better answer, written by the person: used for training
+
+
+class SyncBody(BaseModel):
+    enabled: bool
 
 
 class LessonBody(BaseModel):
@@ -62,6 +81,9 @@ class ChatPatchBody(BaseModel):
     auto_edit: Optional[bool] = None
     auto_run: Optional[bool] = None
     opencode_commands: Optional[bool] = None
+    computer: Optional[bool] = None
+    computer_auto: Optional[bool] = None
+    space: Optional[str] = Field(None, max_length=40)  # "" = out of its project
 
 
 class FileBody(BaseModel):
@@ -127,13 +149,19 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
     oc = OpenCodeLink(home / "opencode", engine=engine)
     cc = ClaudeCodeLink(engine) if engine is not None else None
     overlay = AppOverlay(home / "app_overlay")
+    spaces = Spaces(home / "projects")
     lessons = LessonStore(home / "learning.db")
     app.state.lessons = lessons
     trainer = LoraTrainer(home, engine, lessons) if engine is not None else None
     app.state.overlay = overlay
     bot = Assistant(ctl, agent, store, router, conns, instr, skills=skills, web=web, code=code, data_home=home,
-                    workspace=workspace, opencode=oc, overlay=overlay, lessons=lessons)
+                    workspace=workspace, opencode=oc, overlay=overlay, lessons=lessons,
+                    computer=ComputerUse(home / "computer_shots"), spaces=spaces)
     app.state.chat = bot
+    sync = ClaudeSync(conns, instr, home / "claude_sync.json", audit=lambda e, d: ctl.audit.append("admin", e, d))
+    app.state.claude_sync = sync
+    if os.environ.get("FUSION_OS_CLAUDE_SYNC", "1") != "0":
+        sync.start()
 
     def _chat(cid: str) -> dict:
         c = store.get(cid)
@@ -146,21 +174,103 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
         from fastapi.responses import HTMLResponse
         html = overlay.serve("chat.html", safe=bool(safe))
         return HTMLResponse(html, headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; "
-                                           "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
+                                           "style-src 'unsafe-inline'; img-src 'self' data: blob:; frame-ancestors 'none'",
                                            "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
 
     # ----- chats -----
     @app.get("/admin/chat/chats", dependencies=[Depends(admin)])
-    def chats(q: str = ""):
-        return store.list(q)
+    def chats(q: str = "", space: str = ""):
+        cs = store.list(q)
+        return [c for c in cs if c["settings"].get("space") == space] if space else cs
 
     @app.post("/admin/chat/chats", dependencies=[Depends(admin)])
     def new_chat(body: NewChatBody):
-        return store.create(body.title)
+        settings = None
+        if body.space:
+            try:
+                spaces.get(body.space)
+            except KeyError:
+                raise HTTPException(404, "no such project")
+            settings = {"space": body.space}
+        return store.create(body.title, settings=settings)
+
+    # ----- projects (instructions and knowledge shared by their chats) -----
+    def _space(sid: str) -> dict:
+        try:
+            return spaces.get(sid)
+        except KeyError:
+            raise HTTPException(404, "no such project")
+
+    @app.get("/admin/projects", dependencies=[Depends(admin)])
+    def list_spaces():
+        counts: dict[str, int] = {}
+        for c in store.list(limit=5000):
+            sid = c["settings"].get("space")
+            if sid:
+                counts[sid] = counts.get(sid, 0) + 1
+        return [{**s, "chats": counts.get(s["id"], 0)} for s in spaces.list()]
+
+    @app.post("/admin/projects", dependencies=[Depends(admin)])
+    def create_space(body: SpaceBody):
+        try:
+            s = spaces.create(body.name or "", body.description or "", body.instructions or "")
+        except SpaceError as exc:
+            raise HTTPException(400, str(exc))
+        _audit("project.create", {"id": s["id"]})
+        return s
+
+    @app.get("/admin/projects/{sid}", dependencies=[Depends(admin)])
+    def get_space(sid: str):
+        return {**_space(sid), "chat_list": [c for c in store.list(limit=5000) if c["settings"].get("space") == sid]}
+
+    @app.patch("/admin/projects/{sid}", dependencies=[Depends(admin)])
+    def update_space(sid: str, body: SpaceBody):
+        _space(sid)
+        try:
+            return spaces.update(sid, body.name, body.description, body.instructions)
+        except SpaceError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.delete("/admin/projects/{sid}", dependencies=[Depends(admin)])
+    def delete_space(sid: str):
+        _space(sid)
+        for c in store.list(limit=5000):  # its chats stay, outside any project
+            if c["settings"].get("space") == sid:
+                store.update(c["id"], settings={k: v for k, v in c["settings"].items() if k != "space"})
+        _audit("project.delete", {"id": sid})
+        return {"ok": spaces.delete(sid)}
+
+    @app.post("/admin/projects/{sid}/files", dependencies=[Depends(admin)])
+    def add_space_file(sid: str, body: SpaceFileBody):
+        _space(sid)
+        try:
+            out = spaces.add_file(sid, body.name, body.content)
+        except SpaceError as exc:
+            raise HTTPException(400, str(exc))
+        _audit("project.file.add", {"id": sid, "file": out["name"], "size": out["size"]})
+        return out
+
+    @app.get("/admin/projects/{sid}/files/{name}", dependencies=[Depends(admin)])
+    def read_space_file(sid: str, name: str):
+        _space(sid)
+        try:
+            return {"name": name, "content": spaces.read_file(sid, name)}
+        except KeyError:
+            raise HTTPException(404, "no such file")
+
+    @app.delete("/admin/projects/{sid}/files/{name}", dependencies=[Depends(admin)])
+    def remove_space_file(sid: str, name: str):
+        _space(sid)
+        try:
+            return {"ok": spaces.remove_file(sid, name)}
+        except KeyError:
+            raise HTTPException(404, "no such file")
 
     @app.get("/admin/chat/chats/{cid}", dependencies=[Depends(admin)])
     def get_chat(cid: str):
-        return {**_chat(cid), "messages": store.messages(cid), "project": bot.project(cid)}
+        sp = bot.space(cid)
+        return {**_chat(cid), "messages": store.messages(cid), "project": bot.project(cid),
+                "computer": bot.computer_settings(cid), "space": {"id": sp["id"], "name": sp["name"]} if sp else None}
 
     @app.patch("/admin/chat/chats/{cid}", dependencies=[Depends(admin)])
     def patch_chat(cid: str, body: ChatPatchBody):
@@ -179,6 +289,19 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
                 # auto-approve is given for one folder; a new folder starts with approvals on again
                 settings = {**settings, "project": folder or None, "auto_edit": False, "auto_run": False,
                             "opencode_commands": False, "opencode_session": None}
+        if body.space is not None:
+            if body.space:
+                _space(body.space)
+                settings = {**settings, "space": body.space}
+            else:
+                settings = {k: v for k, v in settings.items() if k != "space"}
+        if body.computer is False:
+            settings = {**settings, "computer_auto": False}  # turning it back on starts with approvals again
+        for k in ("computer", "computer_auto"):
+            v = getattr(body, k)
+            if v is not None and (k == "computer" or v is False or settings.get("computer")):
+                settings = {**settings, k: v}
+                ctl.audit.append("admin", f"chat.{k}", {"chat_id": cid, "on": v})
         for k in ("auto_edit", "auto_run", "opencode_commands"):
             v = getattr(body, k)
             if v is not None:
@@ -412,6 +535,33 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
                 errors.append(f"{s['name']}: {exc}")
         return {"added": added, "errors": errors}
 
+    # ----- computer use: screenshots shown in the chat -----
+    @app.get("/admin/computer/shot/{name}", dependencies=[Depends(admin)])
+    def computer_shot(name: str):
+        from fastapi.responses import FileResponse
+        try:
+            f = bot.computer.shot_path(name)
+        except ComputerError:
+            raise HTTPException(400, "bad name")
+        if not f.is_file():
+            raise HTTPException(404, "screenshot no longer kept")
+        return FileResponse(f, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+
+    # ----- keeping in step with Claude (desktop app and Claude Code) -----
+    @app.get("/admin/claude-sync", dependencies=[Depends(admin)])
+    def claude_sync_status():
+        return sync.status()
+
+    @app.post("/admin/claude-sync", dependencies=[Depends(admin)])
+    def claude_sync_set(body: SyncBody):
+        _audit("claude.sync.enabled", {"on": body.enabled})
+        out = sync.set_enabled(body.enabled)
+        return sync.run(force=True) if body.enabled else out
+
+    @app.post("/admin/claude-sync/run", dependencies=[Depends(admin)])
+    def claude_sync_run():
+        return sync.run(force=True)
+
     # ----- instruction skills -----
     @app.get("/admin/iskills", dependencies=[Depends(admin)])
     def iskills():
@@ -476,4 +626,4 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
                 errors.append(f"{d.name}: {exc}")
         return {"added": added, "errors": errors}
 
-    return {"store": store, "connectors": conns, "instructions": instr, "assistant": bot}
+    return {"store": store, "connectors": conns, "instructions": instr, "assistant": bot, "claude_sync": sync}
