@@ -500,3 +500,183 @@ def test_opencode_hand_off_needs_approval_and_reports_changes(parts, monkeypatch
     assert ["-m", "fusion/llamacpp/qwen"] == seen["args"][seen["args"].index("-m"):seen["args"].index("-m") + 2]
     assert parts["store"].get(cid)["settings"]["opencode_session"] == "ses_1"
     assert out[-1]["content"] == "OpenCode fixed it."
+
+
+# ---------- Claude Code on Engine Pro (offline) ----------
+def test_claude_code_launch_env_and_status(tmp_path):
+    from fusion_os.chat.claude_code import ClaudeCodeLink, find_claude, launch_env
+
+    class Eng:
+        base_url, token, client = "http://127.0.0.1:8765", "s3cr3t-engine", None
+
+        def status(self):
+            return {"connected": True}
+
+        def models(self):
+            return [{"id": "claude"}, {"id": "llamacpp/qwen2.5-7b-Q4_K_M"}]
+
+        def _headers(self):
+            return {"Authorization": "Bearer s3cr3t-engine"}
+
+    exe = tmp_path / "claude"
+    exe.write_text("")
+    env = {"FUSION_OS_CLAUDE": str(exe), "ANTHROPIC_API_KEY": "sk-real", "PATH": ""}
+    assert find_claude(env) == str(exe) and find_claude({"FUSION_OS_CLAUDE": str(tmp_path / "x")}) is None
+    link = ClaudeCodeLink(Eng(), env)
+    st = link.status()
+    assert st["installed"] and st["model"] == "llamacpp/qwen2.5-7b-Q4_K_M" and "s3cr3t-engine" not in st["manual"]
+    e = launch_env(env, "http://127.0.0.1:8765/", "s3cr3t-engine", st["model"])
+    assert "ANTHROPIC_API_KEY" not in e, "the person's real key must not leak into the offline session"
+    assert e["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8765" and e["ANTHROPIC_AUTH_TOKEN"] == "s3cr3t-engine"
+    assert e["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == st["model"] and e["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "32768"
+    assert e["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
+
+
+# ---------- self-improvement: the app's own interface ----------
+from fusion_os.chat.learning import LessonStore  # noqa: E402
+from fusion_os.chat.self_ui import AppOverlay, UIChangeError, check, original  # noqa: E402
+
+
+def test_interface_change_checks_versions_undo_and_original(tmp_path):
+    ov = AppOverlay(tmp_path / "ov")
+    page = original("chat.html")
+    good = [{"old": "<title>", "new": "<!-- tidy --><title>"}] if page.count("<title>") == 1 else None
+    assert good, "chat.html has one <title>"
+    plan = ov.plan("chat.html", good)
+    assert "+<!-- tidy --><title>" in plan["diff"].replace("\n", "") or "tidy" in plan["diff"]
+    v = ov.apply(plan, "tidy")
+    assert v == 1 and "tidy" in ov.serve("chat.html") and "Customised interface" in ov.serve("chat.html")
+    assert "tidy" not in ov.serve("chat.html", safe=True), "?safe=1 always serves the installed page"
+    # forbidden: added lines may not touch approvals, tokens or outside addresses
+    for new in ['<script>fetch("/admin/chat/chats/x/approve")</script>', "<script>localStorage.x=1</script>",
+                '<img src="https://evil.example/x.png">', "<script>eval(1)</script>"]:
+        with pytest.raises(UIChangeError, match="added line"):
+            ov.plan("chat.html", [{"old": "</body>", "new": new + "</body>"}])
+    with pytest.raises(UIChangeError, match="required part"):
+        ov.plan("chat.html", [{"old": "function send(", "new": "function sendX("}])
+    with pytest.raises(UIChangeError, match="unbalanced"):
+        ov.plan("chat.html", [{"old": "function newChat(){", "new": "function newChat(){{"}])
+    with pytest.raises(UIChangeError, match="only these pages"):
+        ov.plan("../security/policy.json", good)
+    stale = ov.plan("chat.html", [{"old": "<!-- tidy -->", "new": "<!-- tidy2 -->"}])
+    ov.apply(ov.plan("chat.html", [{"old": "<!-- tidy -->", "new": "<!-- tidy3 -->"}]), "three")
+    with pytest.raises(UIChangeError, match="changed since"):
+        ov.apply(stale)
+    assert ov.undo("chat.html") == 1 and "tidy -->" in ov.serve("chat.html")
+    assert ov.activate("chat.html", 0) == 0 and "Customised" not in ov.serve("chat.html")
+    assert [x["v"] for x in ov.history()["chat.html"]["versions"]] == [1, 2]
+
+
+def test_assistant_changes_its_interface_only_after_approval(parts):
+    ov = AppOverlay(parts["tmp"] / "ov")
+    r = Script([call("read_app_page", page="chat.html", pattern="<title>"),
+                call("change_app_page", page="chat.html", edits=[{"old": "<title>", "new": "<!--x--><title>"}],
+                     note="mark"), "Done, reload to see it."])
+    b = Assistant(parts["ctl"], parts["agent"], parts["store"], r, parts["conns"], parts["instr"], overlay=ov)
+    chat = parts["store"].create()
+    out = b.send(chat["id"], "change your title area")
+    read, pend = out[1], out[2]
+    assert read["meta"]["status"] == "done" and "<title>" in read["meta"]["output"]
+    assert pend["meta"]["status"] == "pending" and "+<!--x--><title>" in pend["meta"]["preview"]
+    assert ov.current("chat.html")[1] == 0, "nothing changes before approval"
+    b.resume(chat["id"], pend["id"], approve=True)
+    assert ov.current("chat.html")[1] == 1
+
+
+# ---------- self-improvement: learning from feedback ----------
+def test_feedback_lessons_go_into_the_prompt_and_training_set(parts):
+    ls = LessonStore(parts["tmp"] / "learn.db")
+    r = Script(["Paris is the capital of France, a country in Europe with a long history.", "Short answer", "x"])
+    r.complete = lambda system, prompt, max_tokens=0: "Keep answers under 20 words."
+    b = Assistant(parts["ctl"], parts["agent"], parts["store"], r, parts["conns"], parts["instr"], lessons=ls)
+    chat = parts["store"].create()
+    a1 = b.send(chat["id"], "capital of france?")[-1]
+    out = b.rate(chat["id"], a1["id"], -1, note="too long, keep it short", better="Paris.")
+    assert out["lesson"]["text"] == "Keep answers under 20 words."
+    assert parts["store"].get_message(a1["id"])["meta"]["rating"] == -1
+    b.send(chat["id"], "capital of spain? keep answers short")
+    assert "Keep answers under 20 words." in r.seen[-1][0], "lessons reach the system prompt"
+    a2 = [m for m in parts["store"].messages(chat["id"]) if m["role"] == "assistant"][-1]
+    b.rate(chat["id"], a2["id"], 1)  # provider "script" counts as cloud here: not trained on
+    ex = ls.training_examples()
+    assert ex == [{"messages": [{"role": "user", "content": "capital of france?"},
+                                {"role": "assistant", "content": "Paris."}]}]
+    assert len(ls.training_examples(include_cloud=True)) == 2
+    ls.db.execute("UPDATE feedback SET provider='engine' WHERE message_id=?", (a2["id"],))
+    assert len(ls.training_examples()) == 2, "the local model's own good answers are used"
+    with pytest.raises(ValueError):
+        b.rate(chat["id"], chat_first_user(parts, chat), 1)
+
+
+def chat_first_user(p, chat):
+    return next(m["id"] for m in p["store"].messages(chat["id"]) if m["role"] == "user")
+
+
+def test_learning_and_interface_api(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctl = SecurityController(tmp_path / "s")
+    app = create_app(ctl, NO_DOCKER, memory=MemoryStore(tmp_path / "m.db"))
+    app.state.chat.router = Script(["An answer."])
+    c = TestClient(app)
+    adm = {"Authorization": f"Bearer {ctl.admin_token()}"}
+    chat = c.post("/admin/chat/chats", json={}, headers=adm).json()
+    ans = c.post(f"/admin/chat/chats/{chat['id']}/send", json={"text": "hi"}, headers=adm).json()["messages"][-1]
+    assert c.post(f"/admin/chat/chats/{chat['id']}/rate", json={"message_id": ans["id"], "rating": 1},
+                  headers=adm).json()["rating"] == 1
+    assert c.post("/admin/learning/lessons", json={"text": "Use metric units."}, headers=adm).status_code == 200
+    L = c.get("/admin/learning", headers=adm).json()
+    assert L["stats"]["up"] == 1 and L["lessons"][0]["text"] == "Use metric units."
+    assert L["interface"]["chat.html"]["active"] == 0
+    ov = app.state.overlay
+    ov.apply(ov.plan("chat.html", [{"old": "<title>", "new": "<!--v1--><title>"}]))
+    assert "<!--v1-->" in c.get("/app").text and "<!--v1-->" not in c.get("/app?safe=1").text
+    assert c.post("/admin/app/ui/activate", json={"page": "chat.html"}, headers=adm).json()["active"] == 0
+    assert "<!--v1-->" not in c.get("/app").text
+    assert c.post("/admin/app/ui/activate", json={"page": "../x.html", "version": 1}, headers=adm).status_code == 422
+    assert c.get("/admin/learning/train", headers=adm).status_code in (200, 409)
+
+
+# ---------- self-improvement: LoRA training ----------
+def test_lora_trainer_guards_and_converter_extraction(tmp_path):
+    import io as _io
+    import tarfile
+    from fusion_os.models.lora import LoraTrainer, guess_base
+
+    assert guess_base("llamacpp/qwen2.5-7b-Q4_K_M") == ("Qwen/Qwen2.5-7B-Instruct", 15.2)
+    assert guess_base("llamacpp/mystery") is None
+
+    class Eng:
+        base_url, client = "http://127.0.0.1:1", None
+
+        def models(self):
+            return [{"id": "llamacpp/qwen2.5-7b-Q4_K_M"}]
+
+        def _headers(self):
+            return {}
+
+    ls = LessonStore(tmp_path / "l.db")
+    t = LoraTrainer(tmp_path, Eng(), ls)
+    st = t.status()
+    assert st["model"] == "llamacpp/qwen2.5-7b-Q4_K_M" and st["base_repo"] == "Qwen/Qwen2.5-7B-Instruct"
+    assert not st["runtime_ready"] and not st["base_ready"] and st["examples"] == 0
+    with pytest.raises(RuntimeError, match="first"):
+        t.train()
+    with pytest.raises(RuntimeError, match="set up the trainer"):
+        t.download_base()
+    buf = _io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name in ["llama_cpp_python-0.3.38/vendor/llama.cpp/convert_lora_to_gguf.py",
+                     "llama_cpp_python-0.3.38/vendor/llama.cpp/gguf-py/gguf/__init__.py",
+                     "llama_cpp_python-0.3.38/vendor/llama.cpp/ggml/src/evil.c",
+                     "llama_cpp_python-0.3.38/vendor/llama.cpp/../../../escape.py"]:
+            data = b"x"
+            ti = tarfile.TarInfo(name)
+            ti.size = len(data)
+            tf.addfile(ti, _io.BytesIO(data))
+    sd = tmp_path / "sd.tar.gz"
+    sd.write_bytes(buf.getvalue())
+    t._extract_converter(sd)
+    got = sorted(p.relative_to(t.converter).as_posix() for p in t.converter.rglob("*") if p.is_file())
+    assert got == ["convert_lora_to_gguf.py", "gguf-py/gguf/__init__.py"]
+    assert not (tmp_path / "escape.py").exists()

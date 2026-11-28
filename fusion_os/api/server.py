@@ -290,10 +290,12 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         return a
 
     @app.get("/dashboard", include_in_schema=False)
-    def dashboard():
+    def dashboard(safe: int = 0):
         from fastapi.responses import HTMLResponse
         from importlib import resources as _r
-        html = _r.files("fusion_os.api").joinpath("dashboard.html").read_text(encoding="utf-8")
+        overlay = getattr(app.state, "overlay", None)
+        html = overlay.serve("dashboard.html", safe=bool(safe)) if overlay is not None else \
+            _r.files("fusion_os.api").joinpath("dashboard.html").read_text(encoding="utf-8")
         return HTMLResponse(html, headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; "
                                            "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
                                            "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})

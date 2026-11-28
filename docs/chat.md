@@ -81,3 +81,27 @@ The default policy gains `connector-preapproved` (allow) and `connector-ask` (re
 joins the privileged actions that need approval. Version 4 adds `code-run` (require approval) and `chat-auto-approve`
 (allow, used only when you switch on auto-approve for a chat). An unmodified earlier default policy is upgraded automatically; a
 policy you edited is left alone, so add these rules yourself if you changed yours.
+
+## Claude Code on your own model (offline)
+Code menu > **Open Claude Code here (offline)** opens Claude Code in a new window with AI Fusion Engine Pro as its
+model: `ANTHROPIC_BASE_URL` points at the engine's Anthropic-compatible `/v1/messages`, which now supports tool use,
+so Claude Code's own tools, plugins, skills, hooks and local MCP servers keep working. Only that window is changed;
+`~/.claude` is not touched, so Claude Code started any other way still uses your Anthropic account. The model is
+loaded with a 32k-token context. Connectors added on claude.ai belong to your Anthropic account and need the internet.
+
+## Self-improvement
+- **Lessons.** Rate answers with 👍 or 👎. A 👎 with a note becomes a short rule (written by the model from your
+  note) that is added to the prompt of later chats. Edit, pause or delete lessons in Improve > Lessons.
+- **Interface.** Ask in a chat for a change to the app itself. The assistant reads its own page
+  (`read_app_page`) and proposes exact edits (`change_app_page`). Each change is checked (the page must stay complete
+  and balanced, and added lines may not touch approvals, policy, tokens, `eval` or outside web addresses), shown as
+  a diff, and applied only after you approve (`app.ui.change`, never auto-approved). Versions are kept in
+  `<data>/app_overlay`; Improve > Interface switches between them, and `/app?safe=1` always shows the installed page.
+  Python code (server, security controller, policy) cannot be changed this way.
+- **Model training (LoRA).** Improve > Model training trains a LoRA adapter for the engine's local model on your
+  rated chats: answers from the local model you rated 👍 and better answers you wrote. Answers from cloud models are
+  never used. Steps, each started by you: set up the trainer (~3 GB: PyTorch CUDA 12.1, transformers, peft,
+  bitsandbytes, pinned versions; pip and the llama.cpp converter are SHA-256 checked), download the base model's
+  original weights from Hugging Face (~15 GB for a 7B model), train (local models pause meanwhile; held-out loss is
+  measured before and after), then deploy if you choose. The engine loads the model with `--lora-scaled`; Roll back
+  restores the plain model. On a 6 GB GPU a 7B model trains with part of it in RAM, so expect hours per run.

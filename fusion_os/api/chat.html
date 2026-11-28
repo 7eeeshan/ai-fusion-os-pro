@@ -96,6 +96,9 @@ body.collapsed #side{margin-left:-272px}
 .menu svg{width:17px;height:17px;color:var(--mute)}.menu .sub{font-size:12px;color:var(--mute);padding:6px 10px 2px}
 /* pages */
 .page{max-width:900px;margin:0 auto;padding:12px 28px 40px}
+.iconbtn.rate{font-size:13px;opacity:.55;filter:grayscale(1)}.iconbtn.rate.on,.iconbtn.rate:hover{opacity:1;filter:none}
+.fb textarea{width:100%;min-height:70px;margin:6px 0;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--bg);color:var(--fg);font:inherit}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px;margin:6px 0}.kv b{font-weight:550;color:var(--mute)}
 .page h2{font-size:24px;font-weight:550;margin:6px 0 4px}.page .lead{color:var(--mute);margin:0 0 20px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0}
 .card .h{display:flex;align-items:center;gap:10px}.card .h b{font-weight:600}.card .h .sp{flex:1}.card .d{color:var(--mute);font-size:13.5px;margin-top:4px}
@@ -122,6 +125,7 @@ body.collapsed #side{margin-left:-272px}
  <button class="navbtn" data-nav="search" onclick="openSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>Search chats</button>
  <button class="navbtn" data-nav="skills" onclick="go('skills')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>Skills</button>
  <button class="navbtn" data-nav="connectors" onclick="go('connectors')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>Connectors</button>
+ <button class="navbtn" data-nav="improve" onclick="go('improve')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19l5-5 4 4 7-8"/><path d="M15 10h5v5"/></svg>Improve</button>
  <button class="navbtn" onclick="location.href='/dashboard'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mission Control</button>
  <div class="sect">Recents</div>
  <div id="chatlist"></div>
@@ -213,7 +217,7 @@ async function status(){try{const [s,m]=await Promise.all([api("/admin/status"),
   `<div><span class="dot ${sk==="none"?"bad":"ok"}"></span>Sandbox: ${esc(sk)}</div>`+
   (s.pending_approvals?`<div><span class="dot warn"></span><a href="/dashboard">${s.pending_approvals} pending approval(s)</a></div>`:"")+
   `<div title="Model order">Models: ${esc(m.providers.join(" → "))}</div>`}catch{}}
-function route(){const h=location.hash.slice(1);if(h.startsWith("chat/"))openChat(h.slice(5),true);else if(h==="skills")pageSkills();else if(h==="connectors")pageConnectors();else home()}
+function route(){const h=location.hash.slice(1);if(h.startsWith("chat/"))openChat(h.slice(5),true);else if(h==="skills")pageSkills();else if(h==="connectors")pageConnectors();else if(h==="improve")pageImprove();else home()}
 window.addEventListener("hashchange",()=>{if(!location.hash.startsWith("#launch="))route()});
 function go(p){location.hash=p}
 function setNav(n){document.querySelectorAll(".navbtn[data-nav]").forEach(b=>b.classList.toggle("on",b.dataset.nav===n))}
@@ -246,12 +250,12 @@ async function openChat(id,fromHash){setNav("");try{CUR=await api("/admin/chat/c
  DRAFT={links:[],files:[],skill:CUR.settings.skill||null,project:null};renderMsgs();composer(false);loadSide()}
 function attChip(a){if(a.type==="link")return`<a class="att ${a.injection&&a.injection.length?"warn":""}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="${esc(a.url)}">${ic.link}<span>${esc(a.title||a.url)}</span></a>`;
  return`<span class="att">${ic.file}<span>${esc(a.name)}</span></span>`}
-const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector",list_files:"Listed files",read_file:"Read file",search_code:"Searched the code",edit_file:"Edit file",write_file:"Write file",run_code:"Run code",opencode_task:"Hand off to OpenCode"};
+const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector",list_files:"Listed files",read_file:"Read file",search_code:"Searched the code",edit_file:"Edit file",write_file:"Write file",run_code:"Run code",opencode_task:"Hand off to OpenCode",read_app_page:"Read this app's interface",change_app_page:"Change this app's interface"};
 function toolTitle(m){const t=m.meta.tool||"";if(TL[t])return TL[t];if(t.startsWith("skill__"))return"Ran skill "+t.slice(7);const p=t.split("__");return p.length>1?`${p[1]} · ${p[0]}`:t}
 function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:me.kind==="code"?ic.code:t0(me.tool);
- if(me.kind==="code"&&me.preview!=null){const oc=me.tool==="opencode_task",isDiff=me.tool!=="run_code"&&!(oc&&st==="pending");const body=isDiff?diffHtml(String(me.preview).slice(0,40000)):esc(String(me.preview).slice(0,20000));
+ if((me.kind==="code"||me.tool==="change_app_page")&&me.preview!=null){const ui=me.tool==="change_app_page",oc=me.tool==="opencode_task",isDiff=me.tool!=="run_code"&&!(oc&&st==="pending");const body=isDiff?diffHtml(String(me.preview).slice(0,40000)):esc(String(me.preview).slice(0,20000));
   if(st==="pending")return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${body}</pre></details>
-  <div class="ask">${oc?"The assistant wants to hand this task to OpenCode. OpenCode works outside the sandbox and changes files in this folder directly; you'll see every changed file afterwards.":isDiff?"The assistant wants to change this file in your project.":"The assistant wants to run this code. It runs in the sandbox without network, on a copy of your project, so your files are not changed."}
+  <div class="ask">${ui?"The assistant wants to change this app's own interface. It passed the automatic checks. After you approve, reload to see it; Improve > Interface can undo it at any time.":oc?"The assistant wants to hand this task to OpenCode. OpenCode works outside the sandbox and changes files in this folder directly; you'll see every changed file afterwards.":isDiff?"The assistant wants to change this file in your project.":"The assistant wants to run this code. It runs in the sandbox without network, on a copy of your project, so your files are not changed."}
   <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button><button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`;
   return`<details class="tool"><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
   <pre>${oc?esc(String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"").split("Files changed:")[0].slice(0,8000))+"Files changed:\n"+body:body+(isDiff?"":"\n\n"+esc(String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"").slice(0,12000)))}</pre></details>`}
@@ -272,10 +276,61 @@ function renderMsgs(extra=""){const ms=CUR.messages;let h="";
    ${m.meta.skill?`<div class="atts"><span class="att">${ic.star}<span>${esc(m.meta.skill)}</span></span></div>`:""}${m.content?`<div class="b">${esc(m.content)}</div>`:""}</div></div>`}
   else if(m.role==="assistant"){const last=!ms.slice(i+1).some(x=>x.role==="assistant");const model=m.meta.model||{};
    h+=`<div class="msg assistant"><div class="b md">${md(m.content)}</div><div class="meta"><button class="iconbtn" title="Copy" onclick="copyMsg(${m.id})">${ic.copy}</button>
+   <button class="iconbtn rate${m.meta.rating===1?" on":""}" title="Good answer" onclick="rateMsg(${m.id},1)">👍</button><button class="iconbtn rate${m.meta.rating===-1?" on":""}" title="Bad answer: tell it what to do instead" onclick="rateMsg(${m.id},-1,event)">👎</button>
    ${last?`<button class="iconbtn" title="Retry" onclick="retry()">${ic.retry}</button>`:""}${model.provider?`<span>${esc(model.provider)}${model.seconds?" · "+model.seconds.toFixed(1)+"s":""}</span>`:""}</div></div>`}
   else if(m.role==="tool")h+=toolCard(m);
   else h+=`<div class="notice">${esc(m.content)}</div>`});
  $("view").innerHTML=`<div class="col">${h}${extra}</div>`;$("view").scrollTop=1e9}
+async function rateMsg(id,r,ev){if(ev)ev.stopPropagation();if(!CUR)return;if(r>0){await sendRate(id,1,"","");return}
+ closeMenus();const m=document.createElement("div");m.className="menu fb";m.onclick=e=>e.stopPropagation();m.style.cssText="left:50%;top:22%;transform:translateX(-50%);width:min(560px,92vw);padding:14px 16px";
+ m.innerHTML=`<b>What should it do instead?</b><div class="sub" style="padding:4px 0">Your note becomes a lesson the assistant follows from now on. A better answer, if you write one, is also used to train the local model.</div>
+ <textarea id="fbNote" placeholder="For example: answer in bullet points and keep it under 100 words"></textarea>
+ <textarea id="fbBetter" placeholder="Optional: the answer you wanted"></textarea>
+ <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost small" onclick="closeMenus()">Cancel</button><button class="btn small" onclick="sendRate(${id},-1,$('fbNote').value,$('fbBetter').value)">Save</button></div>`;
+ document.body.appendChild(m);setTimeout(()=>$("fbNote").focus(),30)}
+async function sendRate(id,r,note,better){closeMenus();try{const o=await api(`/admin/chat/chats/${CUR.id}/rate`,{method:"POST",body:{message_id:id,rating:r,note:note||"",better:better||""}});
+ const m=CUR.messages.find(x=>x.id===id);if(m)m.meta.rating=o.rating;renderMsgs();toast(o.lesson?"Learned: "+o.lesson.text:r>0?"Thanks, noted as a good answer":"Noted")}catch(e){toast(String(e.message||e))}}
+let IMP={tab:"lessons"};
+async function pageImprove(tab){if(tab)IMP.tab=tab;setNav("improve");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ const L=await api("/admin/learning");let T=null;try{T=await api("/admin/learning/train")}catch{}
+ const tabs=[["lessons","Lessons"],["interface","Interface"],["training","Model training"]];
+ const nav=`<div style="display:flex;gap:6px;margin:6px 0 10px">${tabs.map(([k,n])=>`<button class="btn ${IMP.tab===k?"":"ghost"} small" onclick="pageImprove('${k}')">${n}</button>`).join("")}</div>`;
+ let body="";const st=L.stats;
+ if(IMP.tab==="lessons")body=`<p class="lead">Rate answers with 👍 or 👎. A 👎 with a note becomes a lesson like these, and the assistant follows the relevant ones in every chat. ${st.up} good and ${st.down} bad answers rated so far.</p>
+  <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" onclick="addLesson()">Add a lesson</button></div>
+  ${L.lessons.length?L.lessons.map(l=>`<div class="card"><div class="h"><b style="font-weight:500;${l.enabled?"":"opacity:.5"}">${esc(l.text)}</b><span class="sp"></span><span class="tag">used ${l.uses}×</span>
+   <button class="btn ghost small" onclick="editLesson(${l.id})">Edit</button><button class="btn ghost small" onclick="toggleLesson(${l.id},${!l.enabled})">${l.enabled?"Pause":"Use"}</button><button class="btn ghost small" onclick="delLesson(${l.id})">Delete</button></div></div>`).join(""):`<div class="empty">No lessons yet.</div>`}`;
+ else if(IMP.tab==="interface"){body=`<p class="lead">Ask in any chat for a change to this app, for example "make the sidebar narrower" or "add a button that starts a new coding chat". The assistant reads the page, proposes exact edits, and you approve the diff. Every version is kept here, and the original is always one click away.</p>`;
+  for(const [pg,h] of Object.entries(L.interface)){const path=pg==="chat.html"?"/app":"/dashboard";
+   body+=`<div class="card"><div class="h"><b>${pg==="chat.html"?"Chat":"Dashboard"}</b><span class="tag">${h.active?"version "+h.active:"original"}</span><span class="sp"></span>
+   ${h.active?`<button class="btn ghost small" onclick="uiSet('${pg}',null)">Undo last change</button><button class="btn ghost small" onclick="uiSet('${pg}',0)">Use the original</button>`:""}<a class="btn ghost small" href="${path}?safe=1">Open the original</a></div>
+   ${h.versions.slice().reverse().map(v=>`<div style="display:flex;gap:8px;align-items:center;font-size:13.5px;padding:3px 0"><span class="tag">v${v.v}</span><span>${esc(v.note||"change")}</span><span class="sub">${new Date(v.at*1000).toLocaleString()}</span><span class="sp"></span>${h.active===v.v?`<span class="tag ok">in use</span>`:`<button class="btn ghost small" onclick="uiSet('${pg}',${v.v})">Use this</button>`}</div>`).join("")||`<div class="sub">No changes yet.</div>`}</div>`}}
+ else body=trainHtml(T);
+ $("view").innerHTML=`<div class="page"><h2>Improve</h2>${nav}${body}</div>`;
+ if(IMP.tab==="training"&&T&&T.running)setTimeout(()=>{if(location.hash==="#improve"&&IMP.tab==="training")pageImprove()},5000)}
+function trainHtml(T){if(!T)return`<div class="empty">Start AI Fusion Engine Pro to train its model.</div>`;
+ const ex=`${T.examples} of ${T.min_examples} examples`;const last=(T.jobs||[]).slice().reverse();const dep=Object.entries(T.deployed||{});
+ return`<p class="lead">Training teaches the local model itself, not just its prompt: a small LoRA adapter is trained on your rated chats (answers from the local model you rated 👍 and better answers you wrote), tested on chats it didn't see, and only used if you deploy it. Answers that came from a cloud model are never used for training. Everything runs on this PC. ${esc(T.gpu_note)}</p>
+ <div class="card"><div class="kv"><b>Model</b><span>${esc(T.model||"engine not running")}</span><b>Trained from</b><span>${esc(T.base_repo||"unknown: set it below")}</span><b>Training set</b><span>${ex}</span><b>Now</b><span>${T.running?"⏳ "+esc(T.progress||T.task):esc(T.progress||"idle")}${T.error?` <span style="color:var(--bad)">${esc(T.error)}</span>`:""}</span>
+ <b>In use</b><span>${dep.length?dep.map(([m,a])=>esc(m)+" + adapter").join(", "):"plain model"}</span></div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+  <button class="btn ${T.runtime_ready?"ghost":""} small" ${T.running?"disabled":""} onclick="trainStep('runtime','Download and set up the trainer (about ${T.runtime_gb} GB: PyTorch with CUDA, transformers, peft, bitsandbytes)?')">${T.runtime_ready?"✓ Trainer ready":"1. Set up trainer (~"+T.runtime_gb+" GB)"}</button>
+  <button class="btn ${T.base_ready?"ghost":""} small" ${T.running||!T.runtime_ready?"disabled":""} onclick="trainBase()">${T.base_ready?"✓ Base weights ready":"2. Download base weights"+(T.base_gb?" (~"+T.base_gb+" GB)":"")}</button>
+  <button class="btn small" ${T.running||!T.base_ready||T.examples<T.min_examples?"disabled":""} onclick="trainStep('start','Train now? Local models pause while it runs (chats use your other provider or wait). It can take hours on this GPU.')">3. Train</button>
+  ${dep.length?`<button class="btn ghost small" onclick="trainStep('rollback','Stop using the trained adapter and go back to the plain model?')">Roll back to the plain model</button>`:""}</div></div>
+ ${last.map(j=>`<div class="card"><div class="h"><b>${esc(j.id)}</b><span class="tag ${j.better?"ok":"warn"}">${j.better?"better":"no clear gain"}</span><span class="sp"></span>${(T.deployed||{})[(j.model||"").split("/").pop()]?.path===j.path?`<span class="tag ok">in use</span>`:`<button class="btn ${j.better?"":"ghost"} small" onclick="trainDeploy('${j.id}',${j.better})">Deploy</button>`}</div>
+  <div class="kv"><b>Examples</b><span>${j.examples}</span><b>Held-out loss</b><span>${j.base_loss} → ${j.trained_loss} (lower is better)</span><b>Took</b><span>${j.minutes} min</span></div></div>`).join("")}`}
+async function trainStep(k,q){if(q&&!confirm(q))return;try{await api("/admin/learning/train/"+k,{method:"POST",body:{}});toast("Started")}catch(e){toast(String(e.message||e))}pageImprove("training")}
+async function trainBase(){const T=await api("/admin/learning/train");let repo=T.base_repo;if(!repo||!confirm(`Download ${repo} from Hugging Face`+(T.base_gb?` (about ${T.base_gb} GB)`:"")+"? It must be the original of the model the engine runs."))
+ {repo=prompt("Hugging Face repo the engine's model was made from (for example Qwen/Qwen2.5-7B-Instruct)",repo||"");if(!repo)return}
+ try{await api("/admin/learning/train/base",{method:"POST",body:{repo}});toast("Downloading")}catch(e){toast(String(e.message||e))}pageImprove("training")}
+async function trainDeploy(j,better){if(!confirm(better?"Use this adapter for the local model?":"This adapter didn't clearly improve held-out loss. Use it anyway?"))return;
+ try{await api("/admin/learning/train/deploy",{method:"POST",body:{job:j}});toast("Deployed: the model reloads with it on the next chat")}catch(e){toast(String(e.message||e))}pageImprove("training")}
+async function addLesson(){const t=prompt("A rule for the assistant to follow");if(!t)return;await api("/admin/learning/lessons",{method:"POST",body:{text:t}});pageImprove()}
+async function editLesson(id){const L=await api("/admin/learning");const l=L.lessons.find(x=>x.id===id);const t=prompt("Lesson",l?l.text:"");if(t===null)return;await api(`/admin/learning/lessons/${id}`,{method:"PATCH",body:{text:t}});pageImprove()}
+async function toggleLesson(id,on){await api(`/admin/learning/lessons/${id}`,{method:"PATCH",body:{enabled:on}});pageImprove()}
+async function delLesson(id){if(!confirm("Delete this lesson?"))return;await api(`/admin/learning/lessons/${id}`,{method:"DELETE"});pageImprove()}
+async function uiSet(pg,v){try{await api("/admin/app/ui/activate",{method:"POST",body:{page:pg,version:v}});toast("Done. Reloading…");setTimeout(()=>location.reload(),600)}catch(e){toast(String(e.message||e))}}
 function copyMsg(id){const m=CUR.messages.find(x=>x.id===id);navigator.clipboard.writeText(m.content).then(()=>toast("Copied"))}
 /* ---------- composer ---------- */
 function composer(isHome){const c=$("composer");c.style.display="";
@@ -304,14 +359,19 @@ async function pickSkill(n){closeMenus();DRAFT.skill=n;if(CUR)await api(`/admin/
 function projFolder(){return CUR?(CUR.project&&CUR.project.folder)||"":DRAFT.project||""}
 function projOn(){return CUR?!!(CUR.settings&&CUR.settings.project):!!DRAFT.project}
 function projLabel(){const f=projFolder();if(!projOn())return"Code";const n=f.split(/[\\/]/).filter(Boolean).pop();return n||f}
-let OC=null;async function ocStatus(){try{OC=await api("/admin/chat/opencode")}catch{OC={installed:false}}return OC}
+let OC=null,CC=null;async function ocStatus(){try{OC=await api("/admin/chat/opencode")}catch{OC={installed:false}}try{CC=await api("/admin/claude-code")}catch{CC={installed:false}}return OC}
 async function projectMenu(ev){ev.stopPropagation();const tgt=ev.currentTarget;if(!OC)await ocStatus();ev={currentTarget:tgt,stopPropagation(){}};const p=CUR&&CUR.project,ae=!!(p&&p.auto_edit),ar=!!(p&&p.auto_run),oc=!!(p&&p.opencode_commands);
  menuAt(ev,`<div class="sub">Project folder for coding</div><div class="sub" style="font-family:Consolas,monospace;word-break:break-all">${esc(projFolder()||"(the workspace folder)")}</div>
  ${p&&p.error?`<div class="sub" style="color:var(--bad)">${esc(p.error)}</div>`:""}
  <button onclick="setProject()">${ic.code}Choose a folder…</button>${projOn()?`<button onclick="setProject('')">✕ Use the workspace folder</button>`:""}
  ${CUR?`<div class="sub">Without asking each time</div><button class="chk" onclick="setAuto('auto_edit',${!ae})"><b>${ae?"✓":""}</b>Apply file edits</button><button class="chk" onclick="setAuto('auto_run',${!ar})"><b>${ar?"✓":""}</b>Run code (sandbox, no network)</button>`:""}
  <div class="sub">OpenCode ${OC.installed?`${esc(OC.version||"")} linked`+(OC.engine_model?`, using Engine Pro (${esc(OC.engine_model)})`:", using its own model setting"):"not installed"}</div>
- ${OC.installed?(CUR?`<button class="chk" onclick="setAuto('opencode_commands',${!oc})"><b>${oc?"✓":""}</b>Let OpenCode run commands</button>`:""):`<button onclick="closeMenus();ocHelp()">${ic.code}How to install OpenCode</button>`}`)}
+ ${OC.installed?(CUR?`<button class="chk" onclick="setAuto('opencode_commands',${!oc})"><b>${oc?"✓":""}</b>Let OpenCode run commands</button>`:""):`<button onclick="closeMenus();ocHelp()">${ic.code}How to install OpenCode</button>`}
+ <div class="sub">Claude Code ${CC&&CC.installed?(CC.engine?`on Engine Pro (${esc(CC.model)}), offline`:"found; start Engine Pro to use it offline"):"not installed"}</div>
+ ${CC&&CC.installed&&CC.engine?`<button onclick="openClaudeCode()">${ic.code}Open Claude Code here (offline)</button>`:`<button onclick="closeMenus();ccHelp()">${ic.code}About Claude Code offline</button>`}`)}
+async function openClaudeCode(){closeMenus();toast("Opening Claude Code on your local model…");try{const r=await api("/admin/claude-code/launch",{method:"POST",body:{chat:CUR?CUR.id:null}});
+ if(r.launched)toast("Claude Code opened in "+r.folder+(r.warning?" ("+r.warning+")":""));else renderInfo("Start Claude Code","Run this in PowerShell in "+r.folder+":\n\n"+r.manual)}catch(e){toast(String(e.message||e))}}
+function ccHelp(){renderInfo("Claude Code with AI Fusion, offline","Claude Code can run on your own Engine Pro model with no internet. Your plugins, skills, hooks and local MCP servers keep working because only the model changes. Your normal Claude Code (with your Anthropic account) is not changed.\n\nConnectors you added on claude.ai belong to your Anthropic account, so they need the internet and are not available offline.\n\n1. Install Claude Code once: irm https://claude.ai/install.ps1 | iex\n2. Start AI Fusion Engine Pro (tray > Open AI Fusion Engine).\n3. Code menu > Open Claude Code here (offline).\n\nThe local model is loaded with a 32k-token context. A 7B model is much less capable than Claude models: keep tasks small and specific."+(CC&&CC.manual?"\n\nTo start it yourself (for example in VS Code's terminal):\n"+CC.manual:""))}
 function ocHelp(){renderInfo("Link OpenCode","OpenCode is the open source coding agent (opencode.ai, MIT licence). Install it once, then restart AI Fusion OS Pro; the chat can then hand coding tasks to it, and it uses your Engine Pro model when the engine is running.\n\nIn PowerShell: npm install -g opencode-ai\n\nOr download it from github.com/sst/opencode/releases and set FUSION_OS_OPENCODE in desktop.env to the path of opencode.exe.")}
 function renderInfo(t,b){closeMenus();const m=document.createElement("div");m.className="menu";m.style.cssText="left:50%;top:30%;transform:translateX(-50%);max-width:520px;padding:16px 18px;white-space:pre-wrap;font-size:14px";
  m.innerHTML=`<b style="font-size:15px">${esc(t)}</b>\n\n${esc(b)}\n\n<button class="btn small" onclick="closeMenus()">OK</button>`;document.body.appendChild(m)}

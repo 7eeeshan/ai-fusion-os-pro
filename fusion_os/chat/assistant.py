@@ -89,12 +89,15 @@ def parse_tool_call(text: str) -> Optional[tuple[str, dict, str]]:
 class Assistant:
     def __init__(self, ctl, agent: dict, store: ChatStore, router, connectors: ConnectorManager,
                  instructions: InstructionSkills, skills=None, web=None, max_tokens: int = 3000,
-                 code: Optional[CodeTools] = None, data_home=None, workspace=None, opencode=None):
+                 code: Optional[CodeTools] = None, data_home=None, workspace=None, opencode=None, overlay=None,
+                 lessons=None):
         self.ctl, self.agent, self.store, self.router = ctl, agent, store, router
         self.connectors, self.instructions, self.skills, self.web = connectors, instructions, skills, web
         self.max_tokens = max_tokens
         self.code, self.data_home, self.workspace = code, data_home, workspace
         self.opencode = opencode
+        self.overlay = overlay  # AppOverlay: the app's own pages, which it may change with approval
+        self.lessons = lessons  # LessonStore: what the person taught it through feedback
 
     # ---------- project folder ----------
     def project(self, chat_id: Optional[str]) -> Optional[dict]:
@@ -163,6 +166,17 @@ class Assistant:
                   "matter name and description, then the instructions) so future chats know how to do this kind "
                   "of work. The person approves it first.", "hint": '{"skill_md": string}', "permission": "ask",
                   "kind": "build"})
+        if self.overlay is not None:
+            t.append({"id": "read_app_page", "description": "Read this app's own interface (chat.html is the chat "
+                      "you are in, dashboard.html the dashboard) to plan a change to it. Give a line range, or a "
+                      "pattern to find lines.", "hint": '{"page": "chat.html", "start"?: int, "end"?: int, '
+                      '"pattern"?: string}', "permission": "allow", "kind": "build"})
+            t.append({"id": "change_app_page", "description": "Change this app's own interface when the person asks "
+                      "(layout, colours, labels, new buttons or panels). Give exact edits: each old text must "
+                      "appear once in the page (read it first). It is checked automatically, the person approves "
+                      "the diff, and it can always be undone. Changes may not touch approvals, policy, tokens or "
+                      "outside web addresses.", "hint": '{"page": "chat.html", "edits": [{"old": string, "new": '
+                      'string}], "note": string}', "permission": "ask", "kind": "build"})
         t.append({"id": "add_connector", "description": "Propose adding a remote MCP connector (https URL) that "
                   "would give you tools you are missing. The person approves it first.",
                   "hint": '{"name": string, "url": string}', "permission": "ask", "kind": "build"})
@@ -196,6 +210,13 @@ class Assistant:
                              + self.instructions.read(pinned_skill)[:30000])
             except KeyError:
                 pass
+        if self.lessons is not None and chat_id:
+            last = next((m["content"] for m in reversed(self.store.messages(chat_id)) if m["role"] == "user"), "")
+            learned = self.lessons.for_prompt(last)
+            if learned:
+                parts.append("\n## Lessons from the person's feedback\nThe person taught you these in earlier "
+                             "chats. Follow them unless this request says otherwise:\n"
+                             + "\n".join(f"- {x}" for x in learned))
         if tools:
             parts.append(TOOL_PROMPT + "\n".join(
                 f"- {t['id']} {t['hint']}: {t['description'][:400]}" + (" (asks the person first)"
@@ -372,10 +393,76 @@ class Assistant:
                 "output": wrap(text[:60000], "opencode", "tool").render(),
                 "preview": changes, "summary": f"{n} file{'s' if n != 1 else ''} changed in {r['seconds']} s"}
 
+    # ---------- feedback ----------
+    def rate(self, chat_id: str, message_id: int, rating: int, note: str = "", better: str = "") -> dict:
+        """Thumbs up/down on an answer. A note on a thumbs down becomes a lesson the assistant follows from now on."""
+        if self.lessons is None:
+            raise ValueError("learning is not set up")
+        msgs = self.store.messages(chat_id)
+        idx = next((i for i, m in enumerate(msgs) if m["id"] == message_id), None)
+        if idx is None or msgs[idx]["role"] != "assistant":
+            raise ValueError("only answers can be rated")
+        conv = []
+        for m in msgs[:idx]:
+            if m["role"] == "user":
+                conv.append({"role": "user", "content": m["content"]})
+            elif m["role"] == "assistant" and m["content"].strip():
+                conv.append({"role": "assistant", "content": m["content"]})
+        merged: list[dict] = []
+        for m in conv:  # tool steps are left out; keep turns alternating
+            if merged and merged[-1]["role"] == m["role"]:
+                merged[-1]["content"] += "\n\n" + m["content"]
+            else:
+                merged.append(m)
+        provider = ((msgs[idx]["meta"] or {}).get("model") or {}).get("provider", "")
+        f = self.lessons.rate(chat_id, message_id, rating, merged, msgs[idx]["content"], provider, note, better)
+        meta = dict(msgs[idx]["meta"] or {})
+        meta["rating"] = f["rating"]
+        self.store.set_meta(message_id, meta)
+        lesson = self.lessons.lesson_from_feedback(self.router, f["id"]) if rating < 0 and note.strip() else None
+        self.ctl.audit.append("admin", "chat.feedback", {"chat_id": chat_id, "message_id": message_id,
+                                                         "rating": f["rating"], "lesson": bool(lesson)})
+        return {"rating": f["rating"], "lesson": lesson}
+
+    # ---------- the app's own interface ----------
+    def _app_ui(self, tid: str, args: dict, approval_id: Optional[str]) -> dict:
+        from .self_ui import UIChangeError, read_page
+        page = str(args.get("page") or "chat.html")
+        try:
+            if tid == "read_app_page":
+                text, v = self.overlay.current(page) if page in ("chat.html", "dashboard.html") else ("", 0)
+                if not text:
+                    return {"status": "error", "output": "pages: chat.html, dashboard.html"}
+                out = read_page(text, args.get("start") or 1, args.get("end"), str(args.get("pattern") or ""))
+                return {"status": "done", "output": out, "summary": f"{page} (version {v or 'original'})"}
+            edits = args.get("edits") if isinstance(args.get("edits"), list) else []
+            plan = self.overlay.plan(page, [e for e in edits if isinstance(e, dict)])
+        except UIChangeError as exc:
+            return {"status": "error", "output": str(exc)[:6000], "summary": "change refused"}
+        note = str(args.get("note") or "")[:300]
+        v = self._gate("app.ui.change", "standard", page, {"page": page, "sha256": plan["sha256"],
+                                                           "base_version": plan["base_version"]}, approval_id)
+        if v.effect == "pending_approval":
+            return {"status": "pending", "approval_id": v.approval_id, "output": "", "preview": plan["diff"],
+                    "summary": f"change to {page}: {note or 'interface change'}"}
+        if not v.allowed:
+            return {"status": "denied", "output": f"not changed: {v.reason}"}
+        try:
+            ver = self.overlay.apply(plan, note)
+        except UIChangeError as exc:
+            return {"status": "error", "output": str(exc)}
+        self.ctl.audit.append(self.agent["agent_id"], "app.ui.changed", {"page": page, "version": ver,
+                                                                         "sha256": plan["sha256"], "note": note})
+        return {"status": "done", "preview": plan["diff"], "summary": f"{page} is now version {ver}",
+                "output": f"{page} changed (version {ver}). The person reloads the page to see it; Settings > "
+                          "Interface can undo it, and ?safe=1 always shows the original."}
+
     # ---------- self-build ----------
     def _build(self, tid: str, args: dict, approval_id: Optional[str]) -> dict:
         """New skills and connectors the assistant makes for itself. Each one is checked automatically and only
         takes effect after the person approves it (the `skill.register` / `connector.add` approval)."""
+        if tid in ("read_app_page", "change_app_page"):
+            return self._app_ui(tid, args, approval_id)
         if tid == "build_skill":
             files = args.get("files") or {}
             if not isinstance(files, dict) or not all(isinstance(v, str) for v in files.values()):

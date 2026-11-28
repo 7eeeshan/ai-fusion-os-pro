@@ -14,11 +14,44 @@ from ..chat import (Assistant, ChatStore, ConnectorManager, InstructionSkills, c
                     read_claude_servers)
 from ..chat.code import CodeError, CodeTools, check_project
 from ..chat.opencode import OpenCodeLink
+from ..chat.claude_code import ClaudeCodeLink
+from ..chat.learning import LessonStore
+from ..models.lora import LoraTrainer
+from ..chat.self_ui import AppOverlay, UIChangeError
 from ..sandbox import AutoSandbox
 
 
 class NewChatBody(BaseModel):
     title: str = "New chat"
+
+
+class RateBody(BaseModel):
+    message_id: int
+    rating: int = Field(..., ge=-1, le=1)
+    note: str = Field("", max_length=4000)  # what was wrong / what to do instead: becomes a lesson
+    better: str = Field("", max_length=20000)  # a better answer, written by the person: used for training
+
+
+class LessonBody(BaseModel):
+    text: Optional[str] = Field(None, max_length=400)
+    enabled: Optional[bool] = None
+
+
+class TrainBody(BaseModel):
+    repo: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    epochs: float = Field(2, gt=0, le=10)
+    gpu_mem_gb: float = Field(0, ge=0, le=80)
+    job: Optional[str] = Field(None, pattern=r"^job-[0-9-]+$")
+    scale: float = Field(1.0, ge=0, le=2)
+
+
+class UIVersionBody(BaseModel):
+    page: str = Field(..., pattern=r"^(chat|dashboard)\.html$")
+    version: Optional[int] = Field(None, ge=0)  # None = undo the last change
+
+
+class LaunchBody(BaseModel):
+    chat: Optional[str] = Field(None, max_length=64)  # open in that chat's project folder (default: the workspace)
 
 
 class ChatPatchBody(BaseModel):
@@ -92,8 +125,14 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
     sbx = code_sandbox or AutoSandbox(allowed_images=("python:3.12-slim",), workroot=runs, allow_process=True)
     code = CodeTools(sbx, runs)
     oc = OpenCodeLink(home / "opencode", engine=engine)
+    cc = ClaudeCodeLink(engine) if engine is not None else None
+    overlay = AppOverlay(home / "app_overlay")
+    lessons = LessonStore(home / "learning.db")
+    app.state.lessons = lessons
+    trainer = LoraTrainer(home, engine, lessons) if engine is not None else None
+    app.state.overlay = overlay
     bot = Assistant(ctl, agent, store, router, conns, instr, skills=skills, web=web, code=code, data_home=home,
-                    workspace=workspace, opencode=oc)
+                    workspace=workspace, opencode=oc, overlay=overlay, lessons=lessons)
     app.state.chat = bot
 
     def _chat(cid: str) -> dict:
@@ -103,10 +142,9 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
         return c
 
     @app.get("/app", include_in_schema=False)
-    def chat_app():
-        from importlib import resources as _r
+    def chat_app(safe: int = 0):
         from fastapi.responses import HTMLResponse
-        html = _r.files("fusion_os.api").joinpath("chat.html").read_text(encoding="utf-8")
+        html = overlay.serve("chat.html", safe=bool(safe))
         return HTMLResponse(html, headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; "
                                            "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
                                            "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
@@ -185,6 +223,116 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
     @app.get("/admin/chat/opencode", dependencies=[Depends(admin)])
     def opencode_status():
         return {**oc.status(), "engine_model": oc.engine_model()}
+
+    # ----- learning from feedback -----
+    @app.post("/admin/chat/chats/{cid}/rate", dependencies=[Depends(admin)])
+    def rate(cid: str, body: RateBody):
+        _chat(cid)
+        try:
+            return bot.rate(cid, body.message_id, body.rating, body.note, body.better)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get("/admin/learning", dependencies=[Depends(admin)])
+    def learning():
+        return {"stats": lessons.stats(), "lessons": lessons.lessons(), "interface": overlay.history()}
+
+    @app.post("/admin/learning/lessons", dependencies=[Depends(admin)])
+    def add_lesson(body: LessonBody):
+        try:
+            out = lessons.add_lesson(body.text or "")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        ctl.audit.append("admin", "learning.lesson.add", {"id": out["id"]})
+        return out
+
+    @app.patch("/admin/learning/lessons/{lid}", dependencies=[Depends(admin)])
+    def edit_lesson(lid: int, body: LessonBody):
+        lessons.update_lesson(lid, body.text, body.enabled)
+        ctl.audit.append("admin", "learning.lesson.edit", {"id": lid, "enabled": body.enabled})
+        return {"ok": True}
+
+    @app.delete("/admin/learning/lessons/{lid}", dependencies=[Depends(admin)])
+    def delete_lesson(lid: int):
+        lessons.delete_lesson(lid)
+        ctl.audit.append("admin", "learning.lesson.delete", {"id": lid})
+        return {"ok": True}
+
+    # ----- LoRA training of the local model (each step started by the person) -----
+    def _trainer() -> LoraTrainer:
+        if trainer is None:
+            raise HTTPException(409, "AI Fusion Engine Pro is not linked")
+        return trainer
+
+    def _step(event: str, fn, data: dict):
+        try:
+            out = fn()
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+        ctl.audit.append("admin", event, data)
+        return out
+
+    @app.get("/admin/learning/train", dependencies=[Depends(admin)])
+    def train_status():
+        return _trainer().status()
+
+    @app.post("/admin/learning/train/runtime", dependencies=[Depends(admin)])
+    def train_runtime():
+        t = _trainer()
+        return _step("model.install", t.setup_runtime, {"what": "lora trainer runtime"})
+
+    @app.post("/admin/learning/train/base", dependencies=[Depends(admin)])
+    def train_base(body: TrainBody):
+        t = _trainer()
+        return _step("model.install", lambda: t.download_base(body.repo), {"what": "base weights", "repo": body.repo})
+
+    @app.post("/admin/learning/train/start", dependencies=[Depends(admin)])
+    def train_start(body: TrainBody):
+        t = _trainer()
+        return _step("model.train", lambda: t.train(body.epochs, body.gpu_mem_gb), {"epochs": body.epochs})
+
+    @app.post("/admin/learning/train/deploy", dependencies=[Depends(admin)])
+    def train_deploy(body: TrainBody):
+        t = _trainer()
+        return _step("model.adapter.deploy", lambda: t.deploy(body.job or "", body.scale), {"job": body.job})
+
+    @app.post("/admin/learning/train/rollback", dependencies=[Depends(admin)])
+    def train_rollback():
+        t = _trainer()
+        return _step("model.adapter.rollback", t.rollback, {})
+
+    # ----- the app's own interface (versions the assistant made, with approval) -----
+    @app.get("/admin/app/ui", dependencies=[Depends(admin)])
+    def app_ui():
+        return overlay.history()
+
+    @app.post("/admin/app/ui/activate", dependencies=[Depends(admin)])
+    def app_ui_activate(body: UIVersionBody):
+        try:
+            v = overlay.undo(body.page) if body.version is None else overlay.activate(body.page, body.version)
+        except (UIChangeError, KeyError) as exc:
+            raise HTTPException(400, str(exc))
+        ctl.audit.append("admin", "app.ui.activate", {"page": body.page, "version": v})
+        return {"page": body.page, "active": v}
+
+    @app.get("/admin/claude-code", dependencies=[Depends(admin)])
+    def claude_code_status():
+        return cc.status() if cc else {"installed": False, "engine": False}
+
+    @app.post("/admin/claude-code/launch", dependencies=[Depends(admin)])
+    def claude_code_launch(body: LaunchBody):
+        if not cc:
+            raise HTTPException(409, "AI Fusion Engine Pro is not linked")
+        proj = bot.project(body.chat) if body.chat else None
+        folder = proj["folder"] if proj and proj.get("root") else str(workspace)
+        try:
+            root = check_project(folder, home, workspace)
+            out = cc.launch(root)
+        except (CodeError, RuntimeError, OSError) as exc:
+            raise HTTPException(409, str(exc))
+        ctl.audit.append("admin", "claude_code.launch", {"folder": out["folder"], "model": out["model"],
+                                                        "launched": out["launched"]})
+        return out
 
     @app.get("/admin/chat/model", dependencies=[Depends(admin)])
     def chat_model():

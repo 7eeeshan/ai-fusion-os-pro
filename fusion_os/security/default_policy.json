@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "description": "Default AI Fusion OS Pro policy. Rules are checked top to bottom; first match wins; no match = deny. The immutable rules in policy.py run before these and cannot be overridden here.",
   "approval_ttl_seconds": 86400,
   "rules": [
@@ -185,7 +185,10 @@
         "agent.spawn",
         "credential.read",
         "files.write",
-        "connector.add"
+        "connector.add",
+        "app.ui.change",
+        "model.train",
+        "model.adapter.deploy"
       ],
       "zones": [
         "standard",

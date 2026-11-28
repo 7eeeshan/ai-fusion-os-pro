@@ -80,7 +80,8 @@ IMMUTABLE_RULES: list[Rule] = [
     # Dark-web zone is isolated from credentials, private files, privileged tools and skill/system changes.
     Rule(id="immutable:darkweb-isolation", zones=["darkweb"], effect="deny",
          actions=["credential.*", "files.*", "security.*", "skill.register", "system.*", "model.install",
-                  "agent.spawn", "sandbox.exec", "memory.write", "research.web.*", "research.deep.*"]),
+                  "agent.spawn", "sandbox.exec", "memory.write", "research.web.*", "research.deep.*", "app.*",
+                  "model.train", "model.adapter.*"]),
     # Tor is only reachable from the dark-web zone.
     Rule(id="immutable:tor-only-in-darkweb", zones=["standard", "research", "security"], actions=["research.tor.*"],
          effect="deny"),
@@ -113,7 +114,8 @@ def default_policy_text() -> str:
 PREVIOUS_DEFAULTS = {"fdf59e84b73708797c135b78a64f721ccab8aab28cbba4c7be75a37a99e33852",
                      "a208e3cbe5b6e411ff75e2e746e0196f724b8cfb9d58f2b98ea655ad04c9db9e",
                      "6a98b87a1dd7864f24bbeb6de6c19d6ce80d9d15f871867a98728765f86bb171",
-                     "4fee895a05f78c4e849b467da23b82534cbd97ce6f86df34cf0d32a520cfb507"}
+                     "4fee895a05f78c4e849b467da23b82534cbd97ce6f86df34cf0d32a520cfb507",
+                     "06a2a63b5c53864c7802080ef5d506e4ec1cd6eebf26d8316e9f0765c4c0eea5"}
 
 
 class PolicyEngine:
