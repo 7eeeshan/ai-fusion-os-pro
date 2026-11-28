@@ -11,6 +11,10 @@
 //! - Sign-in: the backend writes a per-start launch secret to the user's private data folder; the shell opens the
 //!   dashboard with it, so nobody pastes the admin token.
 //! - Quit asks the backend to shut down cleanly (missions are checkpointed in SQLite) before exiting.
+//! - AI Fusion Engine Pro, when it is bundled (the combined installer puts it in `engine\`), runs headless as the
+//!   local model API on 127.0.0.1:8765. An engine that is already answering there is used instead. "Open AI Fusion
+//!   Engine" in the tray stops the headless engine and opens its window, which then serves the API itself; when
+//!   that window closes the headless engine comes back.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -28,6 +32,17 @@ use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 const PREFERRED_PORT: &str = "8790";
+const ENGINE_PORT: u16 = 8765;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[derive(Default)]
+struct Engine {
+    headless: Mutex<Option<Child>>,
+    gui: Mutex<Option<Child>>,
+    opening: AtomicBool,
+}
 
 #[derive(Default)]
 struct Backend {
@@ -113,10 +128,126 @@ fn backend_command(app: &AppHandle) -> Result<Command, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     Ok(cmd)
+}
+
+// ---------- bundled AI Fusion Engine Pro ----------
+
+fn engine_dir(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().resource_dir().ok()?.join("engine");
+    dir.join(if cfg!(windows) { "afe-cli.exe" } else { "afe-cli" }).exists().then_some(dir)
+}
+
+fn engine_up() -> bool {
+    http(ENGINE_PORT, "GET", "/health", None) == Some(200)
+}
+
+/// Stops a process and everything it started (the engine runs model servers as child processes).
+fn kill_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn alive(slot: &Mutex<Option<Child>>) -> bool {
+    let mut g = slot.lock().unwrap();
+    let running = matches!(g.as_mut().map(|c| c.try_wait()), Some(Ok(None)));
+    if !running {
+        *g = None;
+    }
+    running
+}
+
+fn headless_engine(dir: &PathBuf) -> Result<Child, String> {
+    let exe = dir.join(if cfg!(windows) { "afe-cli.exe" } else { "afe-cli" });
+    let logs = data_home().join("logs");
+    let _ = fs::create_dir_all(&logs);
+    let log = OpenOptions::new().create(true).append(true).open(logs.join("engine.log")).map_err(|e| e.to_string())?;
+    let log2 = log.try_clone().map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(exe);
+    cmd.arg("api").current_dir(dir).stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log2));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn().map_err(|e| e.to_string())
+}
+
+/// Keeps the engine's API available while the app runs, unless another engine already serves it.
+fn supervise_engine(app: AppHandle) {
+    let Some(dir) = engine_dir(&app) else { return };
+    let quitting = || app.state::<Backend>().quitting.load(Ordering::SeqCst);
+    // The backend copies engine data from an earlier install before it starts serving; wait for that first.
+    let t0 = Instant::now();
+    while t0.elapsed() < Duration::from_secs(300) && !quitting() {
+        if read_info().map(|i| healthy(&i)).unwrap_or(false) {
+            break;
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    let mut fails: u32 = 0;
+    while !quitting() {
+        let eng = app.state::<Engine>();
+        if eng.opening.load(Ordering::SeqCst) || alive(&eng.gui) || engine_up() {
+            thread::sleep(Duration::from_secs(3));
+            continue;
+        }
+        let started = Instant::now();
+        match headless_engine(&dir) {
+            Ok(c) => *eng.headless.lock().unwrap() = Some(c),
+            Err(e) => {
+                let _ = fs::write(data_home().join("logs").join("engine-start-error.txt"), e);
+                thread::sleep(Duration::from_secs(30));
+                continue;
+            }
+        }
+        while alive(&eng.headless) && !quitting() {
+            thread::sleep(Duration::from_secs(1));
+        }
+        if quitting() {
+            break;
+        }
+        if eng.opening.load(Ordering::SeqCst) {
+            continue; // stopped on purpose to open the window
+        }
+        fails = if started.elapsed() > Duration::from_secs(300) { 1 } else { fails + 1 };
+        thread::sleep(Duration::from_secs(1 << fails.min(6)));
+    }
+}
+
+fn open_engine_window(app: &AppHandle) {
+    let Some(dir) = engine_dir(app) else { return };
+    let eng = app.state::<Engine>();
+    if alive(&eng.gui) || eng.opening.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(mut c) = eng.headless.lock().unwrap().take() {
+        kill_tree(&mut c);
+    }
+    let t0 = Instant::now();
+    while engine_up() && t0.elapsed() < Duration::from_secs(10) {
+        thread::sleep(Duration::from_millis(250));
+    }
+    let exe = dir.join(if cfg!(windows) { "AIFusionEnginePro.exe" } else { "AIFusionEnginePro" });
+    match Command::new(exe).current_dir(&dir).env("AFE_AUTOSTART_API", "1").spawn() {
+        Ok(c) => *eng.gui.lock().unwrap() = Some(c),
+        Err(e) => {
+            let _ = fs::write(data_home().join("logs").join("engine-start-error.txt"), e.to_string());
+        }
+    }
+    eng.opening.store(false, Ordering::SeqCst);
 }
 
 fn status(window: &Option<WebviewWindow>, msg: &str) {
@@ -258,6 +389,10 @@ fn quit(app: &AppHandle) {
     if let Some(info) = read_info() {
         shutdown_backend(&info);
     }
+    // The engine window, if open, is the person's to close; only the headless engine stops with the app.
+    if let Some(mut c) = app.state::<Engine>().headless.lock().unwrap().take() {
+        kill_tree(&mut c);
+    }
     let t0 = Instant::now();
     loop {
         let mut g = state.child.lock().unwrap();
@@ -277,7 +412,8 @@ fn quit(app: &AppHandle) {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open Mission Control", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open AI Fusion OS Pro", true, None::<&str>)?;
+    let engine = MenuItem::with_id(app, "engine", "Open AI Fusion Engine", engine_dir(app).is_some(), None::<&str>)?;
     let autostart_on = app.autolaunch().is_enabled().unwrap_or(false);
     let autostart = CheckMenuItem::with_id(app, "autostart", "Start at Windows sign-in", true, autostart_on, None::<&str>)?;
     let restart = MenuItem::with_id(app, "restart", "Restart backend", true, None::<&str>)?;
@@ -285,7 +421,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit_i = MenuItem::with_id(app, "quit", "Quit (stops agents)", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &sep, &autostart, &restart, &logs, &sep2, &quit_i])?;
+    let menu = if engine_dir(app).is_some() {
+        Menu::with_items(app, &[&open, &engine, &sep, &autostart, &restart, &logs, &sep2, &quit_i])?
+    } else {
+        Menu::with_items(app, &[&open, &sep, &autostart, &restart, &logs, &sep2, &quit_i])?
+    };
     let autostart_item = autostart.clone();
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().unwrap().clone())
@@ -294,6 +434,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "open" => show_main(app),
+            "engine" => {
+                let app = app.clone();
+                thread::spawn(move || open_engine_window(&app));
+            }
             "autostart" => {
                 let al = app.autolaunch();
                 let on = al.is_enabled().unwrap_or(false);
@@ -330,6 +474,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| show_main(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .manage(Backend::default())
+        .manage(Engine::default())
         .setup(move |app| {
             build_tray(app.handle())?;
             if !hidden {
@@ -337,6 +482,8 @@ pub fn run() {
             }
             let handle = app.handle().clone();
             thread::Builder::new().name("backend-supervisor".into()).spawn(move || supervise(handle))?;
+            let handle = app.handle().clone();
+            thread::Builder::new().name("engine-supervisor".into()).spawn(move || supervise_engine(handle))?;
             Ok(())
         })
         .on_window_event(|window, event| {

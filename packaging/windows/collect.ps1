@@ -1,6 +1,8 @@
 <#
 Collects the release files into dist\: setup exe, MSI, portable zip, dependency manifest and SHA-256 checksums.
+-Name sets the file names; the combined build (with AI Fusion Engine Pro in build\engine) uses AI-Fusion-Pro-Suite.
 #>
+param([string]$Name = "AI-Fusion-OS-Pro")
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path "$PSScriptRoot\..\.."
 $rel = Join-Path $root "desktop\src-tauri\target\release"
@@ -11,24 +13,29 @@ New-Item -ItemType Directory -Path $dist | Out-Null
 $nsis = Get-ChildItem (Join-Path $rel "bundle\nsis") -Filter "*-setup.exe" | Select-Object -First 1
 $msi = Get-ChildItem (Join-Path $rel "bundle\msi") -Filter "*.msi" | Select-Object -First 1
 if (-not $nsis -or -not $msi) { throw "installer outputs not found" }
-Copy-Item $nsis.FullName (Join-Path $dist "AI-Fusion-OS-Pro-Setup.exe")
-Copy-Item $msi.FullName (Join-Path $dist "AI-Fusion-OS-Pro-x64.msi")
+Copy-Item $nsis.FullName (Join-Path $dist "$Name-Setup.exe")
+Copy-Item $msi.FullName (Join-Path $dist "$Name-x64.msi")
 
 # Portable edition: the app exe with its backend and tor folders next to it. Data still goes to the user profile.
-$stage = Join-Path $root "build\portable\AI-Fusion-OS-Pro"
+$stage = Join-Path $root "build\portable\$Name"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item (Join-Path $rel "ai-fusion-os-pro.exe") (Join-Path $stage "AI Fusion OS Pro.exe")
 Copy-Item -Recurse (Join-Path $root "build\backend") (Join-Path $stage "backend")
 Copy-Item -Recurse (Join-Path $root "build\tor") (Join-Path $stage "tor")
+$engine = Join-Path $root "build\engine"
+if (Test-Path (Join-Path $engine "afe-cli.exe")) { Copy-Item -Recurse $engine (Join-Path $stage "engine") }
 Copy-Item (Join-Path $root "packaging\windows\PORTABLE.txt") (Join-Path $stage "README.txt")
-Compress-Archive -Path $stage -DestinationPath (Join-Path $dist "AI-Fusion-OS-Pro-Portable-x64.zip")
+Compress-Archive -Path $stage -DestinationPath (Join-Path $dist "$Name-Portable-x64.zip")
 
 $py = & (Join-Path $root "build\backend\python\python.exe") -I -c "import sys; print(sys.version.split()[0])"
 $tor = Get-Content (Join-Path $root "build\tor\VERSION")
 $lines = @("AI Fusion OS Pro dependency manifest", "", "Embedded Python: $py (python.org embeddable, Sigstore-verified)",
   "Tor Expert Bundle: $tor (GPG-verified checksum list)", "Tauri CLI: $(Get-Content (Join-Path $root 'desktop\package.json') | Select-String '@tauri-apps/cli')",
   "", "Python packages (hash-locked):")
+if (Test-Path (Join-Path $engine "VERSION")) {
+  $lines = $lines[0..4] + @("AI Fusion Engine Pro: $(Get-Content (Join-Path $engine 'VERSION')) (built from its repository in the same run)") + $lines[5..($lines.Count - 1)]
+}
 $lines += Get-Content (Join-Path $root "packaging\windows\requirements.txt") | Where-Object { $_ -match "^[a-z0-9].*==" } | ForEach-Object { "  " + $_.Trim(" \") }
 $lines += @("", "Rust crates (direct):")
 Push-Location (Join-Path $root "desktop\src-tauri")

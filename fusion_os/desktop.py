@@ -6,7 +6,7 @@
 - settings from <data>/desktop.env (only known keys), so nobody edits environment variables by hand;
 - links to AI Fusion Engine Pro automatically when its API token is found;
 - first run migrates (copies, never moves) data from the Claude app's redirected AppData if that is where an earlier
-  manual install kept it;
+  manual install kept it, for this app and for AI Fusion Engine Pro;
 - no admin-token pasting: each start writes a random launch secret to <data>/security/desktop.json (readable by
   this Windows user only, like the admin token). The shell opens /app#launch=<secret> and the page
   exchanges it for a session on the loopback API. The API only listens on 127.0.0.1.
@@ -150,6 +150,39 @@ def migrate_legacy_data(home: Path, env: Optional[dict] = None) -> Optional[Path
     return None
 
 
+ENGINE_SKIP = {"logs", "api.lock", "engine.lock"}
+
+
+def migrate_engine_data(env: Optional[dict] = None) -> Optional[Path]:
+    """Copy AI Fusion Engine Pro's data from the Claude app's redirected AppData to the real %LOCALAPPDATA%, once,
+    so the engine bundled with this app keeps its settings, token and models. The source is only read. The copy goes
+    to a temporary folder first and is renamed at the end, so an interrupted copy is not mistaken for a finished one."""
+    env = os.environ if env is None else env
+    if env.get("AFE_HOME"):
+        return None
+    cands = _local_appdata_candidates(env)
+    if not cands:
+        return None
+    dst = cands[0] / "AIFusionEnginePro"
+    if dst.exists() and any(dst.iterdir()):
+        return None
+    for base in cands[1:]:
+        src = base / "AIFusionEnginePro"
+        if not ((src / "config.json").is_file() or (src / "api_token").is_file()):
+            continue
+        tmp = dst.with_name(dst.name + ".copying")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        shutil.copytree(src, tmp, symlinks=False, ignore=lambda d, names: [n for n in names if n in ENGINE_SKIP])
+        (tmp / "migrated_from.txt").write_text(f"{src}\ncopied {time.strftime('%Y-%m-%d %H:%M:%S')}\n",
+                                               encoding="utf-8")
+        if dst.exists():
+            dst.rmdir()  # empty, checked above
+        tmp.rename(dst)
+        return src
+    return None
+
+
 # ---------- single instance ----------
 class InstanceLock:
     def __init__(self, path: Path):
@@ -249,6 +282,11 @@ def stop_running(wait_s: float = 20) -> bool:
 def run(port: int = 8790, open_browser: bool = False) -> int:
     home = paths.home()
     src = migrate_legacy_data(home)
+    try:
+        engine_src = migrate_engine_data()
+    except OSError as exc:  # never block the app on this; the engine then starts with fresh settings
+        engine_src = None
+        print(json.dumps({"engine_migration_failed": str(exc)[:300]}), flush=True)
     applied = apply_environment(home)
     lock = InstanceLock(home / "desktop.lock")
     if not lock.acquire():
@@ -268,6 +306,7 @@ def run(port: int = 8790, open_browser: bool = False) -> int:
         server = uvicorn.Server(cfg)
         session.server = server
         print(json.dumps({"ready_on": port, "migrated_from": str(src) if src else None,
+                          "engine_migrated_from": str(engine_src) if engine_src else None,
                           "settings": sorted(k for k in applied if not k.endswith(("KEY", "TOKEN")))}), flush=True)
         if open_browser:
             import webbrowser

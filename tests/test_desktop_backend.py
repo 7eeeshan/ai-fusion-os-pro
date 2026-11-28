@@ -55,6 +55,41 @@ def test_migrates_from_claude_redirected_appdata_without_touching_source(tmp_pat
     assert (home / "memory.db").read_text() == "mem"
 
 
+def test_copies_engine_data_once_without_touching_source(tmp_path):
+    lad = tmp_path / "Local"
+    src = lad / "Packages" / "Claude_pzs8sxrjxfjjc" / "LocalCache" / "Local" / "AIFusionEnginePro"
+    (src / "models").mkdir(parents=True)
+    (src / "logs").mkdir()
+    (src / "config.json").write_text("{}")
+    (src / "api_token").write_text("tok")
+    (src / "models" / "m.gguf").write_text("weights")
+    (src / "logs" / "a.log").write_text("x")
+    before = sorted(p.relative_to(src).as_posix() for p in src.rglob("*"))
+    env = {"LOCALAPPDATA": str(lad)}
+    assert desktop.migrate_engine_data(env) == src
+    dst = lad / "AIFusionEnginePro"
+    assert (dst / "api_token").read_text() == "tok" and (dst / "models" / "m.gguf").exists()
+    assert not (dst / "logs").exists() and not (lad / "AIFusionEnginePro.copying").exists()
+    assert sorted(p.relative_to(src).as_posix() for p in src.rglob("*")) == before
+    (src / "api_token").write_text("newer")
+    assert desktop.migrate_engine_data(env) is None  # only once
+    assert (dst / "api_token").read_text() == "tok"
+    assert desktop.migrate_engine_data({**env, "AFE_HOME": str(tmp_path / "x")}) is None
+
+
+def test_engine_link_finds_token_written_later(tmp_path, monkeypatch):
+    from fusion_os.engine_link import EngineLink
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("AFE_TOKEN", raising=False)
+    monkeypatch.delenv("AFE_HOME", raising=False)
+    link = EngineLink()
+    assert link._headers() == {}
+    (tmp_path / "AIFusionEnginePro").mkdir()
+    (tmp_path / "AIFusionEnginePro" / "api_token").write_text("late\n")
+    assert link._headers() == {"Authorization": "Bearer late"}
+    assert EngineLink(token="")._headers() == {}
+
+
 def test_instance_lock(tmp_path):
     a, b = desktop.InstanceLock(tmp_path / "l"), desktop.InstanceLock(tmp_path / "l")
     assert a.acquire()
