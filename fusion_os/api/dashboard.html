@@ -112,7 +112,7 @@ const V={
 let cur="overview";
 async function go(k){cur=k;document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.k===k));const [title,render,after]=V[k];
  $("main").innerHTML=`<h2>${title}</h2><p class="mute">Loading…</p>`;try{$("main").innerHTML=`<h2>${title}</h2>`+await render();if(after)await after()}catch(e){$("main").innerHTML+=`<p class="bad">Could not load: ${esc(e.message)}</p>`}}
-function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1><a href=\"/app\" style=\"color:var(--acc)\">← Back to chat</a>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
+function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1><a href=\"/app\" style=\"color:var(--acc)\">&larr; Back to chat</a>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
 async function startMission(){const r=await api("/admin/missions",{method:"POST",body:{goal:$("goal").value}});toast("Mission "+r.id+" started");go("overview")}
 async function showMission(id){const m=await api("/admin/missions/"+id);toast({status:m.status,error:m.error,waiting_on:m.waiting_on,final:m.result&&m.result.final,log:(m.log||[]).slice(-8)})}
 async function newEng(){const sp=s=>s.split(",").map(x=>x.trim()).filter(Boolean);const now=Date.now()/1000;
