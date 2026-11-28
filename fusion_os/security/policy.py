@@ -110,7 +110,8 @@ def default_policy_text() -> str:
 
 # SHA-256 of earlier *unmodified* default policies. An untouched old default is upgraded to the current default on
 # start; a policy the admin changed is never replaced automatically.
-PREVIOUS_DEFAULTS = {"fdf59e84b73708797c135b78a64f721ccab8aab28cbba4c7be75a37a99e33852"}
+PREVIOUS_DEFAULTS = {"fdf59e84b73708797c135b78a64f721ccab8aab28cbba4c7be75a37a99e33852",
+                     "a208e3cbe5b6e411ff75e2e746e0196f724b8cfb9d58f2b98ea655ad04c9db9e"}
 
 
 class PolicyEngine:

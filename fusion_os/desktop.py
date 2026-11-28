@@ -8,7 +8,7 @@
 - first run migrates (copies, never moves) data from the Claude app's redirected AppData if that is where an earlier
   manual install kept it;
 - no admin-token pasting: each start writes a random launch secret to <data>/security/desktop.json (readable by
-  this Windows user only, like the admin token). The shell opens /dashboard#launch=<secret> and the dashboard
+  this Windows user only, like the admin token). The shell opens /app#launch=<secret> and the page
   exchanges it for a session on the loopback API. The API only listens on 127.0.0.1.
 """
 from __future__ import annotations
@@ -271,7 +271,7 @@ def run(port: int = 8790, open_browser: bool = False) -> int:
                           "settings": sorted(k for k in applied if not k.endswith(("KEY", "TOKEN")))}), flush=True)
         if open_browser:
             import webbrowser
-            webbrowser.open(f"http://127.0.0.1:{port}/dashboard#launch={session.secret}")
+            webbrowser.open(f"http://127.0.0.1:{port}/app#launch={session.secret}")
         server.run()
         return 0
     finally:

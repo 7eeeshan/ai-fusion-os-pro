@@ -1,7 +1,7 @@
 //! AI Fusion OS Pro desktop shell.
 //!
 //! The shell owns no business logic. It supervises the Python backend (bundled embedded Python, started with
-//! `python -I -m fusion_os desktop`), shows the Mission Control dashboard the backend serves on 127.0.0.1, and lives
+//! `python -I -m fusion_os desktop`), shows the chat interface (with Mission Control one click away) the backend serves on 127.0.0.1, and lives
 //! in the system tray so agents keep working when the window is closed.
 //!
 //! - One instance: a second launch focuses the existing window. The backend has its own lock too, and an already
@@ -129,7 +129,7 @@ fn status(window: &Option<WebviewWindow>, msg: &str) {
 }
 
 fn open_dashboard(app: &AppHandle, info: &Info) {
-    let url = format!("http://127.0.0.1:{}/dashboard#launch={}", info.port, info.launch);
+    let url = format!("http://127.0.0.1:{}/app#launch={}", info.port, info.launch);
     let state = app.state::<Backend>();
     let mut current = state.dashboard.lock().unwrap();
     if current.as_deref() == Some(url.as_str()) {

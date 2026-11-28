@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Fusion OS Pro</title>
+<style>
+:root{--bg:#faf9f6;--side:#f1efea;--panel:#ffffff;--line:#e4e1d9;--text:#1d1c1a;--mute:#6f6b63;--soft:#ece9e2;
+ --acc:#5a63e6;--acc2:#4a52cc;--accsoft:#e9eafc;--ok:#2f8f4e;--warn:#a86b00;--bad:#c2372f;--code:#f4f2ed;--shadow:0 1px 3px rgba(0,0,0,.06),0 6px 24px rgba(0,0,0,.05)}
+:root[data-theme=dark]{--bg:#1e1e1c;--side:#171716;--panel:#262624;--line:#3a3935;--text:#ecebe7;--mute:#a19e95;--soft:#2f2e2b;
+ --acc:#8189ff;--acc2:#9aa0ff;--accsoft:#2c2e4a;--ok:#5ec27f;--warn:#e0a63a;--bad:#ef6a62;--code:#2b2a27;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.3)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1e1e1c;--side:#171716;--panel:#262624;--line:#3a3935;--text:#ecebe7;--mute:#a19e95;--soft:#2f2e2b;
+ --acc:#8189ff;--acc2:#9aa0ff;--accsoft:#2c2e4a;--ok:#5ec27f;--warn:#e0a63a;--bad:#ef6a62;--code:#2b2a27;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.3)}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font:15px/1.55 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);display:flex;overflow:hidden}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,textarea,select{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--acc)}
+a{color:var(--acc)}
+.btn{background:var(--acc);color:#fff;border-radius:10px;padding:8px 14px;font-weight:550}.btn:hover{background:var(--acc2)}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}.btn.ghost:hover{background:var(--soft)}
+.btn.danger{background:var(--bad)}.btn.small{padding:4px 10px;font-size:13px;border-radius:8px}
+.btn:disabled{opacity:.5;cursor:default}
+/* sidebar */
+#side{width:272px;flex-shrink:0;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;transition:margin .2s}
+body.collapsed #side{margin-left:-272px}
+.brand{display:flex;align-items:center;gap:10px;padding:14px 14px 8px;font-weight:650;font-size:15px}
+.brand svg{width:26px;height:26px}.brand .sp{flex:1}
+.iconbtn{width:32px;height:32px;border-radius:8px;display:inline-grid;place-items:center;color:var(--mute)}.iconbtn:hover{background:var(--soft);color:var(--text)}
+.iconbtn svg{width:18px;height:18px}
+.navbtn{display:flex;align-items:center;gap:10px;margin:1px 8px;padding:8px 10px;border-radius:9px;color:var(--text);text-align:left;width:calc(100% - 16px)}
+.navbtn:hover,.navbtn.on{background:var(--soft)}.navbtn svg{width:18px;height:18px;color:var(--mute);flex-shrink:0}
+.navbtn.new{color:var(--acc);font-weight:600}.navbtn.new svg{color:var(--acc)}
+.sect{font-size:12px;color:var(--mute);padding:14px 18px 4px;font-weight:600}
+#chatlist{flex:1;overflow:auto;padding-bottom:8px}
+.ci{display:flex;align-items:center;margin:0 8px;border-radius:9px}.ci:hover,.ci.on{background:var(--soft)}
+.ci button.t{flex:1;text-align:left;padding:7px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.ci .iconbtn{opacity:0;width:28px;height:28px}.ci:hover .iconbtn{opacity:1}
+.foot{border-top:1px solid var(--line);padding:10px 14px;font-size:12.5px;color:var(--mute);display:flex;flex-direction:column;gap:3px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--mute)}.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+/* main */
+#main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+#top{height:52px;display:flex;align-items:center;gap:8px;padding:0 14px;flex-shrink:0}
+#top .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+#top .sp{flex:1}
+#view{flex:1;overflow:auto}
+.col{max-width:780px;margin:0 auto;padding:8px 24px 24px}
+/* empty */
+.hello{max-width:780px;margin:12vh auto 0;padding:0 24px;text-align:center}
+.hello h1{font-weight:500;font-size:34px;margin:0 0 24px;letter-spacing:-.01em}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 12px;font-size:13.5px;color:var(--mute)}.chip:hover{color:var(--text);border-color:var(--mute)}
+/* messages */
+.msg{margin:22px 0}
+.msg.user{display:flex;justify-content:flex-end}
+.msg.user .b{background:var(--soft);border-radius:18px;padding:10px 16px;max-width:100%;white-space:pre-wrap;word-wrap:break-word}
+.msg.assistant .b{word-wrap:break-word}
+.atts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-bottom:6px}
+.att{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:4px 10px;font-size:13px;max-width:320px}
+.att span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.att svg{width:14px;height:14px;flex-shrink:0;color:var(--mute)}
+.att .x{color:var(--mute);margin-left:2px}.att.warn{border-color:var(--warn)}
+.meta{font-size:12px;color:var(--mute);margin-top:6px;display:flex;gap:10px;align-items:center}
+.meta .iconbtn{width:26px;height:26px}.meta .iconbtn svg{width:15px;height:15px}
+.notice{font-size:13.5px;color:var(--mute);border-left:3px solid var(--warn);padding:4px 12px;margin:14px 0}
+.tool{border:1px solid var(--line);border-radius:12px;margin:12px 0;background:var(--panel);font-size:14px;overflow:hidden}
+.tool summary{cursor:pointer;padding:9px 14px;display:flex;align-items:center;gap:8px;list-style:none}.tool summary::-webkit-details-marker{display:none}
+.tool summary svg{width:16px;height:16px;color:var(--mute);flex-shrink:0}.tool summary .s{color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool pre{margin:0;padding:10px 14px;border-top:1px solid var(--line);max-height:280px;overflow:auto;font-size:12.5px;background:var(--code);white-space:pre-wrap}
+.tool.pending{border-color:var(--acc);box-shadow:0 0 0 3px var(--accsoft)}
+.tool .ask{padding:4px 14px 12px}.tool .ask .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.st-done{color:var(--ok)}.st-error,.st-denied{color:var(--bad)}.st-pending{color:var(--acc)}
+/* markdown */
+.md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+.md p{margin:.6em 0}.md h1,.md h2,.md h3,.md h4{margin:1.1em 0 .4em;line-height:1.3}.md h1{font-size:1.45em}.md h2{font-size:1.25em}.md h3{font-size:1.1em}
+.md ul,.md ol{padding-left:1.5em;margin:.5em 0}.md li{margin:.2em 0}
+.md code{background:var(--code);border-radius:5px;padding:1px 5px;font:13px/1.5 "Cascadia Code",Consolas,ui-monospace,monospace}
+.md pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:0;overflow:hidden;margin:.8em 0}
+.md pre .bar{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--mute);padding:4px 10px;border-bottom:1px solid var(--line)}
+.md pre code{display:block;padding:10px 12px;overflow:auto;background:none;white-space:pre}
+.md blockquote{border-left:3px solid var(--line);margin:.6em 0;padding:0 12px;color:var(--mute)}
+.md table{border-collapse:collapse;margin:.8em 0;font-size:14px;display:block;overflow:auto}.md th,.md td{border:1px solid var(--line);padding:6px 10px;text-align:left}.md th{background:var(--soft)}
+.md hr{border:0;border-top:1px solid var(--line);margin:1.2em 0}
+.typing{display:inline-flex;gap:4px;padding:8px 0}.typing i{width:7px;height:7px;border-radius:50%;background:var(--mute);animation:b 1.2s infinite}.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,80%,100%{opacity:.25}40%{opacity:1}}
+/* composer */
+#composer{padding:0 24px 18px;flex-shrink:0}
+.box{max-width:732px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:10px 12px 8px}
+.box:focus-within{border-color:var(--mute)}
+.box textarea{width:100%;border:0;background:transparent;resize:none;padding:6px 6px;max-height:260px;min-height:28px;line-height:1.5}
+.box .bar{display:flex;align-items:center;gap:6px}.box .bar .sp{flex:1}
+.send{width:34px;height:34px;border-radius:10px;background:var(--acc);color:#fff;display:grid;place-items:center}.send:disabled{opacity:.35}.send svg{width:18px;height:18px}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:13px;color:var(--mute)}
+.pill.on{color:var(--acc);border-color:var(--acc);background:var(--accsoft)}
+.hint{max-width:732px;margin:6px auto 0;text-align:center;font-size:12px;color:var(--mute)}
+.menu{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:230px;z-index:20}
+.menu button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-size:14px}.menu button:hover{background:var(--soft)}
+.menu svg{width:17px;height:17px;color:var(--mute)}.menu .sub{font-size:12px;color:var(--mute);padding:6px 10px 2px}
+/* pages */
+.page{max-width:900px;margin:0 auto;padding:12px 28px 40px}
+.page h2{font-size:24px;font-weight:550;margin:6px 0 4px}.page .lead{color:var(--mute);margin:0 0 20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0}
+.card .h{display:flex;align-items:center;gap:10px}.card .h b{font-weight:600}.card .h .sp{flex:1}.card .d{color:var(--mute);font-size:13.5px;margin-top:4px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:8px 0 16px}.tabs button{padding:8px 12px;color:var(--mute);border-bottom:2px solid transparent;margin-bottom:-1px}.tabs button.on{color:var(--text);border-color:var(--acc)}
+.toolrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}.toolrow:first-child{border-top:0}
+.toolrow .n{font-family:"Cascadia Code",Consolas,monospace;font-size:13px}.toolrow .dd{color:var(--mute);font-size:12.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{padding:3px 9px;font-size:12.5px;color:var(--mute)}.seg button.on{background:var(--accsoft);color:var(--acc);font-weight:600}.seg button:disabled{opacity:.35;cursor:not-allowed}
+.switch{position:relative;width:36px;height:20px;border-radius:20px;background:var(--line);flex-shrink:0;transition:.15s}.switch.on{background:var(--acc)}.switch:after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}.switch.on:after{left:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2 label,.stack label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute)}
+.stack{display:flex;flex-direction:column;gap:10px}
+.tag{font-size:11.5px;border-radius:6px;padding:1px 7px;background:var(--soft);color:var(--mute)}.tag.warn{color:var(--warn)}.tag.bad{color:var(--bad)}.tag.ok{color:var(--ok)}
+.empty{color:var(--mute);padding:20px 0;text-align:center}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:14px;display:none;z-index:50;max-width:80%}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:grid;place-items:center;z-index:40}
+.modal .in{background:var(--panel);border-radius:16px;padding:20px;width:min(720px,92vw);max-height:84vh;overflow:auto;box-shadow:var(--shadow)}
+.login{max-width:440px;margin:18vh auto;padding:0 24px;text-align:center}.login input{width:100%;margin:14px 0}
+@media (max-width:760px){#side{position:absolute;z-index:30;height:100%}body:not(.collapsed) #main:before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.3);z-index:25}.grid2{grid-template-columns:1fr}}
+</style></head>
+<body class="">
+<aside id="side">
+ <div class="brand"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4"><circle cx="11" cy="13" r="7" stroke="#5a63e6"/><circle cx="21" cy="13" r="7" stroke="#9a6be0"/><circle cx="16" cy="21" r="7" stroke="#3b8fd6"/></svg>
+  <span>AI Fusion OS Pro</span><span class="sp"></span><button class="iconbtn" title="Hide sidebar" onclick="toggleSide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button></div>
+ <button class="navbtn new" onclick="newChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>New chat</button>
+ <button class="navbtn" data-nav="search" onclick="openSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>Search chats</button>
+ <button class="navbtn" data-nav="skills" onclick="go('skills')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>Skills</button>
+ <button class="navbtn" data-nav="connectors" onclick="go('connectors')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>Connectors</button>
+ <button class="navbtn" onclick="location.href='/dashboard'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mission Control</button>
+ <div class="sect">Recents</div>
+ <div id="chatlist"></div>
+ <div class="foot" id="foot"><div><span class="dot"></span>Connecting…</div></div>
+</aside>
+<section id="main">
+ <div id="top"><button class="iconbtn" id="showside" title="Show sidebar" onclick="toggleSide()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
+  <span class="title" id="title"></span><span class="sp"></span>
+  <button class="iconbtn" title="Light or dark" onclick="cycleTheme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button></div>
+ <div id="view"></div>
+ <div id="composer" style="display:none"></div>
+</section>
+<div id="toast"></div>
+<script>
+"use strict";
+const S=sessionStorage;let ADM=S.getItem("adm");
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ic={link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+ file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+ star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>',
+ plug:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>',
+ tool:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
+ build:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>',
+ globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+ dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+ copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+ retry:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg>',
+ plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+ up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+ trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>'};
+function toast(t){const e=$("toast");e.textContent=t;e.style.display="block";clearTimeout(e._t);e._t=setTimeout(()=>e.style.display="none",4200)}
+async function api(path,opt={}){const h={"Authorization":"Bearer "+ADM};if(opt.body!==undefined&&typeof opt.body!=="string"){opt.body=JSON.stringify(opt.body);h["Content-Type"]="application/json"}
+ const r=await fetch(path,{...opt,headers:{...h,...(opt.headers||{})}});const txt=await r.text();let d;try{d=JSON.parse(txt)}catch{d=txt}
+ if(r.status===401||r.status===403&&path.startsWith("/admin/status")){showLogin();throw new Error("sign in needed")}
+ if(!r.ok){const m=typeof d==="object"?(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||d)):d;toast(m);throw new Error(m)}return d}
+/* ---------- theme ---------- */
+function applyTheme(){let t="";try{t=localStorage.getItem("theme")||""}catch{}if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme}
+function cycleTheme(){const dark=matchMedia("(prefers-color-scheme: dark)").matches;const cur=document.documentElement.dataset.theme||(dark?"dark":"light");
+ try{localStorage.setItem("theme",cur==="dark"?"light":"dark")}catch{}applyTheme()}
+applyTheme();
+function toggleSide(){document.body.classList.toggle("collapsed");$("showside").style.display=document.body.classList.contains("collapsed")?"":"none"}
+if(innerWidth<760)toggleSide();
+/* ---------- markdown (escape first, then a small safe subset) ---------- */
+function inline(s){
+ const codes=[];s=s.replace(/`([^`\n]+)`/g,(_,c)=>{codes.push(c);return"\u0000"+(codes.length-1)+"\u0000"});
+ s=esc(s);
+ s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g,(_,t,u)=>`<a href="${u}" target="_blank" rel="noopener noreferrer">${t}</a>`);
+ s=s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?])/g,(_,p,u)=>`${p}<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+ s=s.replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1<em>$2</em>").replace(/~~([^~\n]+)~~/g,"<del>$1</del>");
+ return s.replace(/\u0000(\d+)\u0000/g,(_,i)=>`<code>${esc(codes[+i])}</code>`)}
+function md(src){
+ const lines=String(src||"").replace(/\r/g,"").split("\n");let out="",i=0;
+ const para=[];const flush=()=>{if(para.length){out+="<p>"+para.map(inline).join("<br>")+"</p>";para.length=0}};
+ while(i<lines.length){const l=lines[i];
+  let m=l.match(/^```\s*([\w+-]*)/);
+  if(m){flush();const lang=m[1];const buf=[];i++;while(i<lines.length&&!/^```/.test(lines[i]))buf.push(lines[i++]);i++;
+   out+=`<pre><div class="bar"><span>${esc(lang||"text")}</span><button class="iconbtn" title="Copy" onclick="copyCode(this)">${ic.copy}</button></div><code>${esc(buf.join("\n"))}</code></pre>`;continue}
+  if(/^\s*$/.test(l)){flush();i++;continue}
+  m=l.match(/^(#{1,4})\s+(.*)/);if(m){flush();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`;i++;continue}
+  if(/^\s*([-*_])\s*\1\s*\1[\s\1]*$/.test(l)){flush();out+="<hr>";i++;continue}
+  if(/^\s*>/.test(l)){flush();const buf=[];while(i<lines.length&&/^\s*>/.test(lines[i]))buf.push(lines[i++].replace(/^\s*>\s?/,""));out+="<blockquote>"+md(buf.join("\n"))+"</blockquote>";continue}
+  if(/^\s*\|.*\|\s*$/.test(l)&&i+1<lines.length&&/^\s*\|?\s*:?-{2,}/.test(lines[i+1])){flush();const row=x=>x.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim());
+   const head=row(l);i+=2;let t="<table><thead><tr>"+head.map(c=>`<th>${inline(c)}</th>`).join("")+"</tr></thead><tbody>";
+   while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i])){t+="<tr>"+row(lines[i]).map(c=>`<td>${inline(c)}</td>`).join("")+"</tr>";i++}out+=t+"</tbody></table>";continue}
+  m=l.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)/);
+  if(m){flush();const ordered=/\d/.test(m[2]);const items=[];
+   while(i<lines.length){const mm=lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)/);
+    if(mm&&mm[1].length<=m[1].length+1){items.push(mm[3]);i++}else if(/^\s{2,}\S/.test(lines[i])&&items.length){items[items.length-1]+="\n"+lines[i].trim();i++}else break}
+   out+=(ordered?"<ol>":"<ul>")+items.map(x=>"<li>"+x.split("\n").map(inline).join("<br>")+"</li>").join("")+(ordered?"</ol>":"</ul>");continue}
+  para.push(l);i++}
+ flush();return out}
+function copyCode(b){const c=b.closest("pre").querySelector("code").textContent;navigator.clipboard.writeText(c).then(()=>toast("Copied"))}
+/* ---------- sign-in ---------- */
+function showLogin(){$("composer").style.display="none";$("view").innerHTML=`<div class="login"><h2>Sign in</h2><p style="color:var(--mute)">The desktop app signs you in by itself. In a browser, paste the admin token
+ (<code>python -m fusion_os admin-token</code>). It stays in this tab only.</p><input id="tok" type="password" placeholder="Admin token"><button class="btn" onclick="login($('tok').value)">Continue</button></div>`}
+async function login(tok){ADM=(tok||"").trim();try{await api("/admin/status")}catch{return}S.setItem("adm",ADM);start()}
+async function desktopLaunch(){const m=location.hash.match(/^#launch=([A-Za-z0-9_-]+)$/);if(!m)return false;history.replaceState(null,"",location.pathname);
+ const r=await fetch("/desktop/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({launch:m[1]})});
+ if(!r.ok){toast("Desktop sign-in failed; paste the admin token instead.");return false}ADM=(await r.json()).admin_token;S.setItem("adm",ADM);start();return true}
+/* ---------- state ---------- */
+let CHATS=[],CUR=null,BUSY=false,DRAFT={links:[],files:[],skill:null},ISK=[],TOOLS=[];
+async function start(){await Promise.all([loadChats(),status()]);setInterval(status,20000);route()}
+async function status(){try{const [s,m]=await Promise.all([api("/admin/status"),api("/admin/chat/model")]);
+ const eng=s.engine_link&&s.engine_link.connected,sk=s.sandbox.available?"Docker":(s.sandbox.skills&&s.sandbox.skills.available?"process isolation":"none");
+ $("foot").innerHTML=(s.emergency_stop?`<div><span class="dot bad"></span><b style="color:var(--bad)">Emergency stop is on</b></div>`:"")+
+  `<div><span class="dot ${eng?"ok":"warn"}"></span>${eng?"AI Fusion Engine connected":"Engine not connected"}</div>`+
+  `<div><span class="dot ${sk==="none"?"bad":"ok"}"></span>Sandbox: ${esc(sk)}</div>`+
+  (s.pending_approvals?`<div><span class="dot warn"></span><a href="/dashboard">${s.pending_approvals} pending approval(s)</a></div>`:"")+
+  `<div title="Model order">Models: ${esc(m.providers.join(" → "))}</div>`}catch{}}
+function route(){const h=location.hash.slice(1);if(h.startsWith("chat/"))openChat(h.slice(5),true);else if(h==="skills")pageSkills();else if(h==="connectors")pageConnectors();else home()}
+window.addEventListener("hashchange",()=>{if(!location.hash.startsWith("#launch="))route()});
+function go(p){location.hash=p}
+function setNav(n){document.querySelectorAll(".navbtn[data-nav]").forEach(b=>b.classList.toggle("on",b.dataset.nav===n))}
+async function loadChats(q=""){CHATS=await api("/admin/chat/chats?q="+encodeURIComponent(q));renderList()}
+function renderList(){$("chatlist").innerHTML=CHATS.length?CHATS.map(c=>`<div class="ci ${CUR&&CUR.id===c.id?"on":""}"><button class="t" onclick="go('chat/${c.id}')" title="${esc(c.title)}">${c.starred?"★ ":""}${esc(c.title)}</button>
+ <button class="iconbtn" title="Options" onclick="chatMenu(event,'${c.id}')">${ic.dots}</button></div>`).join(""):`<div class="empty" style="font-size:13px">No chats yet</div>`}
+function closeMenus(){document.querySelectorAll(".menu").forEach(m=>m.remove())}
+document.addEventListener("click",e=>{if(!e.target.closest(".menu")&&!e.target.closest("[data-menu]"))closeMenus()});
+function menuAt(ev,html){closeMenus();ev.stopPropagation();const m=document.createElement("div");m.className="menu";m.innerHTML=html;document.body.appendChild(m);
+ const r=ev.currentTarget.getBoundingClientRect();let top=r.bottom+4,left=r.left;const mh=m.offsetHeight,mw=m.offsetWidth;
+ if(top+mh>innerHeight-8)top=r.top-mh-4;if(left+mw>innerWidth-8)left=innerWidth-mw-8;m.style.top=top+"px";m.style.left=left+"px";return m}
+function chatMenu(ev,id){const c=CHATS.find(x=>x.id===id);menuAt(ev,`<button onclick="star('${id}',${!c.starred})">${ic.star}${c.starred?"Unstar":"Star"}</button>
+ <button onclick="rename('${id}')">${ic.file}Rename</button><button onclick="delChat('${id}')" style="color:var(--bad)">${ic.trash}Delete</button>`)}
+async function star(id,v){closeMenus();await api(`/admin/chat/chats/${id}`,{method:"PATCH",body:{starred:v}});loadChats()}
+async function rename(id){closeMenus();const c=CHATS.find(x=>x.id===id);const t=prompt("Rename chat",c.title);if(t&&t.trim()){await api(`/admin/chat/chats/${id}`,{method:"PATCH",body:{title:t.trim()}});await loadChats();if(CUR&&CUR.id===id){CUR.title=t.trim();$("title").textContent=CUR.title}}}
+async function delChat(id){closeMenus();if(!confirm("Delete this chat?"))return;await api(`/admin/chat/chats/${id}`,{method:"DELETE"});if(CUR&&CUR.id===id){CUR=null;go("")}loadChats()}
+function openSearch(){setNav("search");CUR=null;$("title").textContent="Search";$("composer").style.display="none";
+ $("view").innerHTML=`<div class="page"><input id="sq" placeholder="Search your chats" style="width:100%" oninput="doSearch(this.value)"><div id="sres"></div></div>`;$("sq").focus();doSearch("")}
+async function doSearch(q){const r=await api("/admin/chat/chats?q="+encodeURIComponent(q));$("sres").innerHTML=r.length?r.map(c=>`<div class="card" style="cursor:pointer" onclick="go('chat/${c.id}')"><div class="h"><b>${esc(c.title)}</b><span class="sp"></span><span class="tag">${new Date(c.updated*1000).toLocaleDateString()}</span></div></div>`).join(""):`<div class="empty">No chats match.</div>`}
+/* ---------- chat views ---------- */
+function newChat(){CUR=null;DRAFT={links:[],files:[],skill:null};if(location.hash&&location.hash!=="#")go("");else home()}
+async function loadSide(){try{[ISK,TOOLS]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools")])}catch{}}
+function home(){setNav("");CUR=null;renderList();$("title").textContent="";
+ const hr=new Date().getHours(),g=hr<5?"Good night":hr<12?"Good morning":hr<18?"Good afternoon":"Good evening";
+ $("view").innerHTML=`<div class="hello"><h1>${g}. How can I help?</h1><div id="slot"></div><div class="chips">
+  ${["Summarize a web page I paste","Build me a skill that converts CSV to JSON","What can my connectors do?","Plan my day"].map(s=>`<button class="chip" onclick="useChip(this)">${esc(s)}</button>`).join("")}</div></div>`;
+ composer(true);loadSide()}
+function useChip(b){const t=$("ta");t.value=b.textContent;t.focus();autosize()}
+async function openChat(id,fromHash){setNav("");try{CUR=await api("/admin/chat/chats/"+id)}catch{go("");return}renderList();$("title").textContent=CUR.title;
+ DRAFT={links:[],files:[],skill:CUR.settings.skill||null};renderMsgs();composer(false);loadSide()}
+function attChip(a){if(a.type==="link")return`<a class="att ${a.injection&&a.injection.length?"warn":""}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="${esc(a.url)}">${ic.link}<span>${esc(a.title||a.url)}</span></a>`;
+ return`<span class="att">${ic.file}<span>${esc(a.name)}</span></span>`}
+const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector"};
+function toolTitle(m){const t=m.meta.tool||"";if(TL[t])return TL[t];if(t.startsWith("skill__"))return"Ran skill "+t.slice(7);const p=t.split("__");return p.length>1?`${p[1]} · ${p[0]}`:t}
+function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:t0(me.tool);
+ const args=JSON.stringify(me.arguments||{},null,1);
+ if(st==="pending"){const canAlways=me.kind==="connector";
+  let detail=args;if(me.tool==="build_skill"&&me.arguments&&me.arguments.files){detail=Object.entries(me.arguments.files).map(([k,v])=>`── ${k}\n${v}`).join("\n\n")}
+  else if(me.tool==="create_skill")detail=(me.arguments||{}).skill_md||"";
+  return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${esc(detail.slice(0,20000))}</pre></details>
+  <div class="ask">${me.kind==="build"?"The assistant wants to extend itself. Review what it built; nothing takes effect until you approve.":"This tool needs your approval before it runs."}
+  <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button>${canAlways?`<button class="btn ghost small" onclick="decide(${m.id},true,true)">Always allow this tool</button>`:""}<button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`}
+ return`<details class="tool"><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
+  <pre>${esc("arguments: "+args.slice(0,4000)+"\n\nresult:\n"+String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").slice(0,12000))}</pre></details>`}
+function t0(t){return t==="web_fetch"||t==="web_search"?ic.globe:t==="read_skill"?ic.star:ic.tool}
+function renderMsgs(extra=""){const ms=CUR.messages;let h="";
+ ms.forEach((m,i)=>{
+  if(m.role==="user"){const a=m.meta.attachments||[];h+=`<div class="msg user"><div style="max-width:85%;display:flex;flex-direction:column;align-items:flex-end">${a.length?`<div class="atts">${a.map(attChip).join("")}</div>`:""}
+   ${m.meta.skill?`<div class="atts"><span class="att">${ic.star}<span>${esc(m.meta.skill)}</span></span></div>`:""}${m.content?`<div class="b">${esc(m.content)}</div>`:""}</div></div>`}
+  else if(m.role==="assistant"){const last=!ms.slice(i+1).some(x=>x.role==="assistant");const model=m.meta.model||{};
+   h+=`<div class="msg assistant"><div class="b md">${md(m.content)}</div><div class="meta"><button class="iconbtn" title="Copy" onclick="copyMsg(${m.id})">${ic.copy}</button>
+   ${last?`<button class="iconbtn" title="Retry" onclick="retry()">${ic.retry}</button>`:""}${model.provider?`<span>${esc(model.provider)}${model.seconds?" · "+model.seconds.toFixed(1)+"s":""}</span>`:""}</div></div>`}
+  else if(m.role==="tool")h+=toolCard(m);
+  else h+=`<div class="notice">${esc(m.content)}</div>`});
+ $("view").innerHTML=`<div class="col">${h}${extra}</div>`;$("view").scrollTop=1e9}
+function copyMsg(id){const m=CUR.messages.find(x=>x.id===id);navigator.clipboard.writeText(m.content).then(()=>toast("Copied"))}
+/* ---------- composer ---------- */
+function composer(isHome){const c=$("composer");c.style.display="";
+ const html=`<div class="box"><div id="draft" class="atts" style="justify-content:flex-start"></div>
+  <textarea id="ta" rows="1" placeholder="${isHome?"Ask anything, paste a link, or describe a skill to build…":"Reply…"}" oninput="autosize()" onkeydown="keys(event)"></textarea>
+  <div class="bar"><button class="iconbtn" data-menu title="Add" onclick="plusMenu(event)">${ic.plus}</button>
+  <button class="pill ${DRAFT.skill?"on":""}" data-menu onclick="skillMenu(event)">${ic.star.replace('<svg','<svg width="14" height="14"')} ${esc(DRAFT.skill||"Skills")}</button>
+  <button class="pill" data-menu onclick="toolsMenu(event)">${ic.plug.replace('<svg','<svg width="14" height="14"')} Tools</button>
+  <span class="sp"></span><button class="send" id="sendb" title="Send" onclick="send()">${ic.up}</button></div></div>
+  <div class="hint">Links are read as untrusted text. Tools that pay, send or delete always ask first. Answers can be wrong; check what matters.</div>`;
+ if(isHome){c.style.display="none";$("slot").innerHTML=html.replace('class="hint"','class="hint" style="margin-top:10px"')}else c.innerHTML=html;
+ drawDraft();setTimeout(()=>$("ta")&&$("ta").focus(),30)}
+function autosize(){const t=$("ta");t.style.height="auto";t.style.height=Math.min(t.scrollHeight,260)+"px"}
+function keys(e){if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}}
+function drawDraft(){const d=$("draft");if(!d)return;d.innerHTML=DRAFT.links.map((u,i)=>`<span class="att">${ic.link}<span>${esc(u)}</span><button class="x" onclick="DRAFT.links.splice(${i},1);drawDraft()">✕</button></span>`).join("")+
+ DRAFT.files.map((f,i)=>`<span class="att">${ic.file}<span>${esc(f.name)}</span><button class="x" onclick="DRAFT.files.splice(${i},1);drawDraft()">✕</button></span>`).join("");d.style.display=d.innerHTML?"flex":"none"}
+function plusMenu(ev){menuAt(ev,`<button onclick="addLink()">${ic.link}Add a link</button><button onclick="pickFile()">${ic.file}Attach a text file</button>
+ <button onclick="closeMenus();go('connectors')">${ic.plug}Manage connectors</button><button onclick="closeMenus();go('skills')">${ic.star}Manage skills</button>`)}
+function addLink(){closeMenus();const u=prompt("Link to read (https://…)");if(!u)return;if(!/^https?:\/\//i.test(u.trim())){toast("Use an http(s) link");return}DRAFT.links.push(u.trim());drawDraft()}
+function pickFile(){closeMenus();const i=document.createElement("input");i.type="file";i.multiple=true;i.accept=".txt,.md,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.log,.ini,.toml,.sql,.ps1,.sh,text/*";
+ i.onchange=async()=>{for(const f of i.files){if(f.size>400000){toast(f.name+" is larger than 400 KB");continue}DRAFT.files.push({name:f.name,content:await f.text()})}drawDraft()};i.click()}
+function skillMenu(ev){const en=ISK.filter(s=>s.enabled);menuAt(ev,`<div class="sub">Use a skill for this chat</div>${en.length?en.map(s=>`<button onclick="pickSkill('${esc(s.name)}')" title="${esc(s.description)}">${ic.star}${esc(s.title||s.name)}</button>`).join(""):`<div class="sub">No skills yet.</div>`}
+ ${DRAFT.skill?`<button onclick="pickSkill(null)">✕ Stop using ${esc(DRAFT.skill)}</button>`:""}<button onclick="closeMenus();go('skills')">${ic.plus}Add or import skills</button>`)}
+async function pickSkill(n){closeMenus();DRAFT.skill=n;if(CUR)await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{skill:n||""}});composer(!CUR)}
+function toolsMenu(ev){const by={};TOOLS.forEach(t=>{const g=t.kind==="connector"?t.description.match(/^\[([^\]]+)\]/)?.[1]||"Connector":t.kind==="skill"?"Sandboxed skills":t.kind==="build"?"Self-build":"Built in";(by[g]=by[g]||[]).push(t)});
+ menuAt(ev,`<div style="max-height:360px;overflow:auto">${Object.entries(by).map(([g,ts])=>`<div class="sub">${esc(g)}</div>`+ts.map(t=>`<div style="padding:4px 10px;font-size:13px;display:flex;gap:8px"><span class="n" style="font-family:Consolas,monospace">${esc(t.tool||t.id)}</span><span class="sp" style="flex:1"></span><span class="tag ${t.permission==="ask"?"warn":"ok"}">${t.permission==="ask"?"asks":"allowed"}</span></div>`).join("")).join("")}</div><button onclick="closeMenus();go('connectors')">${ic.plug}Add connectors</button>`)}
+async function send(){if(BUSY)return;const t=$("ta");const text=t.value.trim();if(!text&&!DRAFT.links.length&&!DRAFT.files.length)return;
+ BUSY=true;$("sendb").disabled=true;
+ try{if(!CUR){const c=await api("/admin/chat/chats",{method:"POST",body:{}});CUR={...c,messages:[]};history.replaceState(null,"","#chat/"+c.id);$("title").textContent="New chat";composer(false)}
+  const body={text,links:DRAFT.links,files:DRAFT.files,skill:DRAFT.skill};
+  CUR.messages.push({id:-1,role:"user",content:text,meta:{attachments:DRAFT.links.map(u=>({type:"link",url:u,title:u})).concat(DRAFT.files.map(f=>({type:"file",name:f.name}))),skill:DRAFT.skill}});
+  DRAFT.links=[];DRAFT.files=[];$("ta").value="";drawDraft();autosize();thinking();
+  const r=await api(`/admin/chat/chats/${CUR.id}/send`,{method:"POST",body});await refresh()}
+ catch(e){await refresh().catch(()=>{})}finally{BUSY=false;if($("sendb"))$("sendb").disabled=false;loadChats()}}
+function thinking(){renderMsgs(`<div class="msg assistant"><div class="typing"><i></i><i></i><i></i></div></div>`)}
+async function refresh(){if(!CUR)return;CUR=await api("/admin/chat/chats/"+CUR.id);$("title").textContent=CUR.title;renderMsgs()}
+async function decide(mid,approve,always){if(BUSY)return;BUSY=true;thinking();try{await api(`/admin/chat/chats/${CUR.id}/approve`,{method:"POST",body:{message_id:mid,approve,always}})}catch{}finally{BUSY=false;await refresh();loadSide();status()}}
+async function retry(){if(BUSY)return;BUSY=true;const i=CUR.messages.map(m=>m.role).lastIndexOf("user");CUR.messages=CUR.messages.slice(0,i+1);thinking();
+ try{await api(`/admin/chat/chats/${CUR.id}/retry`,{method:"POST"})}catch{}finally{BUSY=false;refresh()}}
+/* ---------- skills page ---------- */
+let SKTAB="instructions";
+async function pageSkills(){setNav("skills");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ const [isk,tools]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools")]);ISK=isk;TOOLS=tools;
+ const sb=tools.filter(t=>t.kind==="skill");
+ let body="";
+ if(SKTAB==="instructions"){body=`<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="btn" onclick="uploadSkill()">Upload skill (.zip or SKILL.md)</button><button class="btn ghost" onclick="writeSkill()">Write a skill</button><button class="btn ghost" onclick="importSkills()">Import from Claude</button></div>`+
+  (isk.length?isk.map(s=>`<div class="card"><div class="h"><b>${esc(s.title||s.name)}</b>${s.source?`<span class="tag">${esc(s.source)}</span>`:""}${s.warnings.length?`<span class="tag warn" title="${esc(s.warnings.join("\n"))}">${s.warnings.length} warning(s)</span>`:""}<span class="sp"></span>
+   <button class="btn ghost small" onclick="viewSkill('${esc(s.name)}')">View</button><button class="iconbtn" title="Remove" onclick="rmSkill('${esc(s.name)}')">${ic.trash}</button>
+   <div class="switch ${s.enabled?"on":""}" role="switch" tabindex="0" onclick="enSkill('${esc(s.name)}',${!s.enabled})"></div></div><div class="d">${esc(s.description)}</div>
+   ${s.files.length>1?`<div class="d">${s.files.length} files</div>`:""}</div>`).join(""):`<div class="empty">No instruction skills yet. Upload one, import yours from Claude, or ask the assistant to write one.</div>`)}
+ else body=`<p class="lead">Runnable skills are Python programs that pass automatic checks and tests, are approved by you, and always run in the sandbox. Ask the assistant to build one in a chat, or submit them from Mission Control.</p>`+
+  (sb.length?sb.map(t=>`<div class="card"><div class="h"><b>${esc(t.skill)}</b><span class="tag ok">active</span></div><div class="d">${esc(t.description.replace(/^Sandboxed skill: /,""))}</div></div>`).join(""):`<div class="empty">No runnable skills yet.</div>`);
+ $("view").innerHTML=`<div class="page"><h2>Skills</h2><p class="lead">Skills teach the assistant how to do specific kinds of work. They use the same SKILL.md format as Claude's skills.</p>
+  <div class="tabs"><button class="${SKTAB==="instructions"?"on":""}" onclick="SKTAB='instructions';pageSkills()">Instruction skills</button><button class="${SKTAB==="runnable"?"on":""}" onclick="SKTAB='runnable';pageSkills()">Runnable skills</button></div>${body}</div>`}
+async function enSkill(n,v){await api(`/admin/iskills/${n}/enabled`,{method:"PUT",body:{enabled:v}});pageSkills()}
+async function rmSkill(n){if(!confirm(`Remove the skill ${n}?`))return;await api(`/admin/iskills/${n}`,{method:"DELETE"});pageSkills()}
+async function viewSkill(n){const s=await api(`/admin/iskills/${n}`);modal(`<h3 style="margin-top:0">${esc(n)}</h3><div class="md">${md(s.content)}</div><div style="text-align:right;margin-top:14px"><button class="btn" onclick="closeModal()">Close</button></div>`)}
+function modal(h){closeModal();const m=document.createElement("div");m.className="modal";m.id="modal";m.innerHTML=`<div class="in">${h}</div>`;m.onclick=e=>{if(e.target===m)closeModal()};document.body.appendChild(m)}
+function closeModal(){const m=$("modal");if(m)m.remove()}
+function uploadSkill(){const i=document.createElement("input");i.type="file";i.accept=".zip,.md,.skill";i.onchange=async()=>{const f=i.files[0];if(!f)return;let body;
+ if(/\.md$/i.test(f.name))body={skill_md:await f.text()};else{const b=new Uint8Array(await f.arrayBuffer());let s="";for(let k=0;k<b.length;k+=32768)s+=String.fromCharCode.apply(null,b.subarray(k,k+32768));body={zip_b64:btoa(s)}}
+ try{const r=await api("/admin/iskills",{method:"POST",body});toast(`Added ${r.name}`+(r.warnings.length?` (${r.warnings.length} warning(s))`:""));pageSkills()}catch{}};i.click()}
+function writeSkill(){modal(`<h3 style="margin-top:0">Write a skill</h3><div class="stack"><textarea id="skmd" rows="14" style="font-family:Consolas,monospace;font-size:13px">---
+name: my-skill
+description: When to use this skill, in one sentence.
+---
+
+# Instructions
+
+Steps the assistant should follow…</textarea><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveSkill()">Save</button></div></div>`)}
+async function saveSkill(){try{await api("/admin/iskills",{method:"POST",body:{skill_md:$("skmd").value}});closeModal();pageSkills()}catch{}}
+async function importSkills(){const r=await api("/admin/iskills/import/claude");
+ modal(`<h3 style="margin-top:0">Import skills from Claude</h3><p style="color:var(--mute)">Skills found in your Claude skills folder (<code>~/.claude/skills</code>). They are copied; the originals are not changed.</p>
+ ${r.length?r.map(s=>`<label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" value="${esc(s.folder)}" ${s.already_added?"disabled":"checked"}><span><b>${esc(s.name)}</b>${s.already_added?' <span class="tag">already added</span>':""}<br><span class="d">${esc(s.description)}</span></span></label>`).join(""):`<div class="empty">No Claude skills found on this PC.</div>`}
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost" onclick="closeModal()">Close</button>${r.length?`<button class="btn" onclick="doImportSkills()">Import selected</button>`:""}</div>`)}
+async function doImportSkills(){const names=[...document.querySelectorAll("#modal input:checked")].map(x=>x.value);const r=await api("/admin/iskills/import/claude",{method:"POST",body:{names}});
+ toast(`Imported ${r.added.length}`+(r.errors.length?`; ${r.errors.length} failed: ${r.errors[0]}`:""));closeModal();pageSkills()}
+/* ---------- connectors page ---------- */
+async function pageConnectors(){setNav("connectors");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ const cs=await api("/admin/connectors");
+ $("view").innerHTML=`<div class="page"><h2>Connectors</h2><p class="lead">Connect MCP servers to give the assistant tools for your apps and data, the same kind of connectors Claude uses. Every tool asks before it runs unless you allow it; tools that can pay, send or delete always ask.</p>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn" onclick="addConn()">Add connector</button><button class="btn ghost" onclick="importConns()">Import from Claude</button></div>
+ ${cs.length?cs.map(connCard).join(""):`<div class="empty">No connectors yet. Add a remote MCP server URL, a local MCP program, or import the ones you set up in Claude.</div>`}</div>`}
+function connCard(c){const ok=!c.last_error&&c.tools.length;
+ return`<div class="card"><div class="h">${ic.plug.replace('<svg','<svg width="20" height="20"')}<b>${esc(c.name)}</b><span class="tag">${c.type==="http"?"remote":"local program"}</span>
+ ${c.last_error?`<span class="tag bad" title="${esc(c.last_error)}">error</span>`:ok?`<span class="tag ok">${c.tools.length} tools</span>`:`<span class="tag">not connected</span>`}<span class="sp"></span>
+ <button class="btn ghost small" onclick="refreshConn('${c.id}')">Reconnect</button><button class="iconbtn" title="Remove" onclick="rmConn('${c.id}')">${ic.trash}</button>
+ <div class="switch ${c.enabled?"on":""}" role="switch" tabindex="0" onclick="enConn('${c.id}',${!c.enabled})"></div></div>
+ <div class="d">${esc(c.type==="http"?c.url:[c.command,...(c.args||[])].join(" "))}${c.source&&c.source!=="manual"?` · ${esc(c.source)}`:""}</div>
+ ${c.last_error?`<div class="d" style="color:var(--bad)">${esc(c.last_error)}</div>`:""}
+ ${c.tools.length?`<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mute);font-size:13.5px">Tool permissions</summary><div style="margin-top:6px">${c.tools.map(t=>`<div class="toolrow"><span class="n">${esc(t.name)}</span><span class="dd" title="${esc(t.description)}">${esc(t.description)}</span>
+  <div class="seg">${["ask","allow","off"].map(p=>`<button class="${t.permission===p?"on":""}" ${p==="allow"&&t.risky?'disabled title="This tool can pay, send, publish or delete, so it always asks"':""} onclick="perm('${c.id}','${esc(t.name)}','${p}')">${p==="ask"?"Ask":p==="allow"?"Allow":"Off"}</button>`).join("")}</div></div>`).join("")}</div></details>`:""}</div>`}
+async function perm(id,t,p){await api(`/admin/connectors/${id}/tools/${encodeURIComponent(t)}`,{method:"PUT",body:{permission:p}});pageConnectors()}
+async function enConn(id,v){await api(`/admin/connectors/${id}/enabled`,{method:"PUT",body:{enabled:v}});pageConnectors()}
+async function refreshConn(id){toast("Connecting…");const c=await api(`/admin/connectors/${id}/refresh`,{method:"POST"});toast(c.last_error?"Could not connect":"Connected: "+c.tools.length+" tools");pageConnectors()}
+async function rmConn(id){if(!confirm("Remove this connector?"))return;await api(`/admin/connectors/${id}`,{method:"DELETE"});pageConnectors()}
+function addConn(){modal(`<h3 style="margin-top:0">Add connector</h3><div class="tabs"><button id="t1" class="on" onclick="ctab(1)">Remote (URL)</button><button id="t2" onclick="ctab(2)">Local program</button></div>
+ <div id="f1" class="stack"><label>Name<input id="cn1" placeholder="e.g. GitHub"></label><label>MCP server URL<input id="cu" placeholder="https://example.com/mcp"></label>
+ <label>Access token (optional)<input id="ct" type="password" placeholder="Sent as a Bearer token"></label><p class="d" style="margin:0;color:var(--mute);font-size:13px">Remote servers must use https. Servers that need an OAuth sign-in in a browser are not supported yet; use a token.</p></div>
+ <div id="f2" class="stack" style="display:none"><label>Name<input id="cn2" placeholder="e.g. Filesystem"></label><label>Command<input id="cc" placeholder="npx"></label><label>Arguments (one per line)<textarea id="ca" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\\Users\\me\\Documents"></textarea></label>
+ <label>Environment (KEY=value, one per line)<textarea id="ce" rows="2"></textarea></label><p style="margin:0;color:var(--warn);font-size:13px">A local connector runs a program on this PC outside the sandbox, with the access you give it. Only add programs you trust.</p></div>
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="cadd" onclick="saveConn()">Add and connect</button></div>`)}
+let CT=1;function ctab(n){CT=n;$("t1").classList.toggle("on",n===1);$("t2").classList.toggle("on",n===2);$("f1").style.display=n===1?"":"none";$("f2").style.display=n===2?"":"none"}
+async function saveConn(){const b=CT===1?{name:$("cn1").value||"Connector",type:"http",url:$("cu").value.trim(),token:$("ct").value}:
+ {name:$("cn2").value||"Connector",type:"stdio",command:$("cc").value.trim(),args:$("ca").value.split("\n").map(s=>s.trim()).filter(Boolean),
+  env:Object.fromEntries($("ce").value.split("\n").map(s=>s.trim()).filter(s=>s.includes("=")).map(s=>[s.slice(0,s.indexOf("=")).trim(),s.slice(s.indexOf("=")+1)]))};
+ $("cadd").disabled=true;try{const c=await api("/admin/connectors",{method:"POST",body:b});closeModal();toast(c.last_error?"Added, but could not connect: "+c.last_error:"Connected: "+c.tools.length+" tools");pageConnectors()}catch{$("cadd").disabled=false}}
+async function importConns(){const r=await api("/admin/connectors/import/claude");
+ modal(`<h3 style="margin-top:0">Import connectors from Claude</h3><p style="color:var(--mute)">MCP servers set up for the Claude desktop app and Claude Code on this PC. Their settings are copied; Claude's files are not changed.
+ Connectors you added on claude.ai sign in through Claude's own account and can't be copied; add them here with their URL and a token where the service offers one.</p>
+ ${r.length?r.map(s=>`<label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" value="${esc(s.name)}" ${s.already_added||!s.supported?"disabled":"checked"}>
+ <span><b>${esc(s.name)}</b> <span class="tag">${s.type==="http"?"remote":"local program"}</span>${s.already_added?' <span class="tag">already added</span>':""}<br><span class="d">${esc(s.type==="http"?s.url:[s.command,...s.args].join(" "))}</span>
+ ${s.env_keys.length?`<br><span class="d">environment: ${esc(s.env_keys.join(", "))}</span>`:""}${s.note?`<br><span class="d" style="color:var(--warn)">${esc(s.note)}</span>`:""}</span></label>`).join(""):`<div class="empty">No Claude MCP configuration found on this PC.</div>`}
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost" onclick="closeModal()">Close</button>${r.length?`<button class="btn" id="impb" onclick="doImportConns()">Import selected</button>`:""}</div>`)}
+async function doImportConns(){$("impb").disabled=true;const names=[...document.querySelectorAll("#modal input:checked")].map(x=>x.value);
+ const r=await api("/admin/connectors/import/claude",{method:"POST",body:{names}});toast(`Imported ${r.added.length}`+(r.errors.length?`; ${r.errors.length} failed`:""));closeModal();pageConnectors()}
+/* ---------- boot ---------- */
+desktopLaunch().then(ok=>{if(ok)return;if(ADM)api("/admin/status").then(start).catch(()=>{});else showLogin()});
+</script></body></html>

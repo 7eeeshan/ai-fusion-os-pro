@@ -15,6 +15,7 @@ The upgrade is delivered in phases. Every phase ships only features with a worki
 | 6 | Technology intelligence, model benchmarking and approved upgrades with rollback, health, self-healing, backups, improvement lab | Done |
 | 7 | Cloud queue and workers (local/cloud hand-over without duplicates), scheduler, Docker deployment, mission control dashboard | Done |
 | 8 | Windows desktop app: Tauri 2 shell, setup.exe and MSI, bundled Python and Tor, no Docker required, tray, start at sign-in, crash recovery | Milestone 1 done ([docs/desktop.md](docs/desktop.md)) |
+| 9 | Chat-first interface with links, files, Claude-format skills, MCP connectors (remote and local, per-tool permissions, import from Claude) and self-build with approval | Done ([docs/chat.md](docs/chat.md)) |
 
 ## Phase 1: what it does
 
@@ -199,6 +200,10 @@ Download `AI-Fusion-OS-Pro-Setup.exe` (or the MSI, or the portable zip) from the
 [Windows desktop app](../../actions/workflows/windows-desktop.yml) run or release, check it against `SHA256SUMS.txt`,
 and run it. No Docker, Python, Node.js or terminal commands are needed. Details, recovery and uninstall:
 [docs/desktop.md](docs/desktop.md).
+
+The app opens on a chat. Paste links, attach text files, add skills (same SKILL.md format as Claude's) and MCP
+connectors, or import both from your Claude setup. The assistant can also build new skills and connectors for
+itself; each one waits for your approval. See [docs/chat.md](docs/chat.md).
 
 ## API
 

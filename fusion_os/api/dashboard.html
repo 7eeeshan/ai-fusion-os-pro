@@ -112,7 +112,7 @@ const V={
 let cur="overview";
 async function go(k){cur=k;document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.k===k));const [title,render,after]=V[k];
  $("main").innerHTML=`<h2>${title}</h2><p class="mute">Loading…</p>`;try{$("main").innerHTML=`<h2>${title}</h2>`+await render();if(after)await after()}catch(e){$("main").innerHTML+=`<p class="bad">Could not load: ${esc(e.message)}</p>`}}
-function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
+function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1><a href=\"/app\" style=\"color:var(--acc)\">← Back to chat</a>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
 async function startMission(){const r=await api("/admin/missions",{method:"POST",body:{goal:$("goal").value}});toast("Mission "+r.id+" started");go("overview")}
 async function showMission(id){const m=await api("/admin/missions/"+id);toast({status:m.status,error:m.error,waiting_on:m.waiting_on,final:m.result&&m.result.final,log:(m.log||[]).slice(-8)})}
 async function newEng(){const sp=s=>s.split(",").map(x=>x.trim()).filter(Boolean);const now=Date.now()/1000;
@@ -135,5 +135,5 @@ async function drawGraph(){const g=await api(`/v1/memory/graph?node=${encodeURIC
  const pos={};g.nodes.forEach((x,i)=>{const a=2*Math.PI*i/Math.max(n,1),r=i===0?0:Math.min(W,H)/2.6;pos[x]=[W/2+r*Math.cos(a),H/2+r*Math.sin(a)]});
  svg.innerHTML=g.edges.map(e=>{const [x1,y1]=pos[e.subject],[x2,y2]=pos[e.object];return`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3b4656"/><text x="${(x1+x2)/2}" y="${(y1+y2)/2}" fill="#8b949e">${esc(e.predicate)}</text>`}).join("")+
  g.nodes.map(x=>`<circle cx="${pos[x][0]}" cy="${pos[x][1]}" r="6" fill="#4c8dff"/><text x="${pos[x][0]+9}" y="${pos[x][1]+4}">${esc(x)}</text>`).join("")}
-desktopLaunch().then(ok=>{if(!ok&&ADM&&AG)boot()});
+desktopLaunch().then(ok=>{if(ok)return;if(ADM&&AG)boot();else if(ADM)login(ADM)});
 </script></body></html>

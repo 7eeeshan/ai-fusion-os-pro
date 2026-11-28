@@ -891,4 +891,12 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     def engine_status():
         return eng.status()
 
+    from .chat_routes import mount as mount_chat
+    app.state.chat_parts = mount_chat(app, admin, ctl, router, skills=skm, web=wb)
+
+    @app.get("/", include_in_schema=False)
+    def root():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/app")
+
     return app

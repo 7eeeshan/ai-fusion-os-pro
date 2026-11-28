@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "Default AI Fusion OS Pro policy. Rules are checked top to bottom; first match wins; no match = deny. The immutable rules in policy.py run before these and cannot be overridden here.",
   "approval_ttl_seconds": 86400,
   "rules": [
@@ -130,6 +130,29 @@
       "effect": "require_approval"
     },
     {
+      "id": "connector-preapproved",
+      "actions": [
+        "connector.call.preapproved"
+      ],
+      "zones": [
+        "standard",
+        "research"
+      ],
+      "effect": "allow",
+      "description": "connector tools the person set to Allow in the chat (never tools that pay, send or delete)"
+    },
+    {
+      "id": "connector-ask",
+      "actions": [
+        "connector.call"
+      ],
+      "zones": [
+        "standard",
+        "research"
+      ],
+      "effect": "require_approval"
+    },
+    {
       "id": "privileged",
       "actions": [
         "skill.register",
@@ -137,7 +160,8 @@
         "system.update",
         "agent.spawn",
         "credential.read",
-        "files.write"
+        "files.write",
+        "connector.add"
       ],
       "zones": [
         "standard",
