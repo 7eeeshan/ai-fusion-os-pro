@@ -59,8 +59,26 @@ PRELUDE = r"""
 $ErrorActionPreference = 'Stop'
 $A = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__ARGS__')) | ConvertFrom-Json
 Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices;
+using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
 public static class FU {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  public static List<object[]> Windows() {
+    var list = new List<object[]>();
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h) || GetWindow(h, 4) != IntPtr.Zero) return true;  // visible, not owned (no dialogs' owners)
+      int n = GetWindowTextLength(h); if (n == 0) return true;
+      var sb = new StringBuilder(n + 1); GetWindowText(h, sb, sb.Capacity);
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      list.Add(new object[] { h.ToInt64(), (int)pid, sb.ToString() });
+      return true; }, IntPtr.Zero);
+    return list;
+  }
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, int d, UIntPtr e);
@@ -72,7 +90,11 @@ public static class FU {
 }
 '@
 [FU]::SetProcessDPIAware() | Out-Null
-function Out-Json($o) { [Console]::Out.Write(($o | ConvertTo-Json -Depth 6 -Compress)) }
+function Out-Json($o) { [Console]::Out.Write((ConvertTo-Json -InputObject $o -Depth 6 -Compress)) }
+function Find-Window($t) {
+  foreach ($w in [FU]::Windows()) { if ($w[2] -like ('*' + $t + '*')) { return [IntPtr][long]$w[0] } }
+  return [IntPtr]::Zero }
+function Window-Name($h) { foreach ($w in [FU]::Windows()) { if ([long]$w[0] -eq $h.ToInt64()) { return $w[2] } }; return '' }
 """
 
 SCRIPTS = {
@@ -92,26 +114,25 @@ $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Obj
 $ep = New-Object System.Drawing.Imaging.EncoderParameters 1
 $ep.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 75L
 $out.Save($A.path, $codec, $ep)
-$fg = [FU]::GetForegroundWindow()
-$t = (Get-Process | Where-Object { $_.MainWindowHandle -eq $fg } | Select-Object -First 1).MainWindowTitle
+$t = Window-Name ([FU]::GetForegroundWindow())
 Out-Json @{ left = $b.Left; top = $b.Top; width = $b.Width; height = $b.Height; scale = $s; w = $w; h = $h;
             foreground = $t }
 """,
     "list_windows": r"""
-$fg = [FU]::GetForegroundWindow()
-$ws = Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object {
-  @{ pid = $_.Id; app = $_.ProcessName; title = $_.MainWindowTitle; active = ($_.MainWindowHandle -eq $fg);
-     minimized = [FU]::IsIconic($_.MainWindowHandle) } }
+$fg = [FU]::GetForegroundWindow().ToInt64()
+$names = @{}; Get-Process | ForEach-Object { $names[$_.Id] = $_.ProcessName }
+$ws = New-Object System.Collections.ArrayList
+foreach ($w in [FU]::Windows()) {
+  [void]$ws.Add(@{ pid = $w[1]; app = $names[[int]$w[1]]; title = $w[2]; active = ([long]$w[0] -eq $fg);
+     minimized = [FU]::IsIconic([IntPtr][long]$w[0]) }) }
 Out-Json @($ws)
 """,
     "read_window": r"""
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $AE = [System.Windows.Automation.AutomationElement]
 $win = $null
-if ($A.title) {
-  $p = Get-Process | Where-Object { $_.MainWindowTitle -like ('*' + $A.title + '*') } | Select-Object -First 1
-  if ($p) { $win = $AE::FromHandle($p.MainWindowHandle) }
-} else { $win = $AE::FromHandle([FU]::GetForegroundWindow()) }
+if ($A.title) { $h = Find-Window $A.title; if ($h -ne [IntPtr]::Zero) { $win = $AE::FromHandle($h) } }
+else { $win = $AE::FromHandle([FU]::GetForegroundWindow()) }
 if (-not $win) { throw ('no window matches ' + $A.title) }
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 $items = New-Object System.Collections.ArrayList
@@ -137,13 +158,12 @@ Start-Sleep -Milliseconds 800
 Out-Json @{ started = $A.target; pid = $(if ($p) { $p.Id } else { $null }) }
 """,
     "focus_window": r"""
-$p = Get-Process | Where-Object { $_.MainWindowTitle -like ('*' + $A.title + '*') } | Select-Object -First 1
-if (-not $p) { throw ('no window matches ' + $A.title) }
-$h = $p.MainWindowHandle
+$h = Find-Window $A.title
+if ($h -eq [IntPtr]::Zero) { throw ('no window matches ' + $A.title) }
 if ([FU]::IsIconic($h)) { [FU]::ShowWindow($h, 9) | Out-Null }
 [FU]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [FU]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
 [FU]::SetForegroundWindow($h) | Out-Null
-Out-Json @{ focused = $p.MainWindowTitle }
+Out-Json @{ focused = (Window-Name $h) }
 """,
     "click": r"""
 [FU]::SetCursorPos($A.x, $A.y) | Out-Null
@@ -159,10 +179,8 @@ Out-Json @{ clicked = @($A.x, $A.y); button = $A.button; count = $A.times }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $AE = [System.Windows.Automation.AutomationElement]
 $win = $null
-if ($A.title) {
-  $p = Get-Process | Where-Object { $_.MainWindowTitle -like ('*' + $A.title + '*') } | Select-Object -First 1
-  if ($p) { $win = $AE::FromHandle($p.MainWindowHandle) }
-} else { $win = $AE::FromHandle([FU]::GetForegroundWindow()) }
+if ($A.title) { $h = Find-Window $A.title; if ($h -ne [IntPtr]::Zero) { $win = $AE::FromHandle($h) } }
+else { $win = $AE::FromHandle([FU]::GetForegroundWindow()) }
 if (-not $win) { throw 'no such window' }
 $all = $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
 $hit = $null
