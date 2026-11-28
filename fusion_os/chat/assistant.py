@@ -6,7 +6,9 @@ alike. Everything goes through the security controller:
 - links are read with the surface-web fetcher (public addresses only, text only, content marked untrusted);
 - sandboxed skills run through `skill.execute`;
 - connector tools set to "ask" are `connector.call` actions that wait for the person's approval in the chat;
-  tools set to "allow" are `connector.call.preapproved`. Tool output is wrapped as untrusted data.
+  tools set to "allow" are `connector.call.preapproved`. Tool output is wrapped as untrusted data;
+- coding tools work in the chat's project folder: reading is allowed, each change (`files.write`) and each code run
+  (`code.run`) waits for approval unless the person turned on auto-approve for that chat (see code.py).
 """
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ from typing import Any, Optional
 
 from ..security.policy import ActionRequest
 from ..security.untrusted import wrap
+from .code import CodeError, CodeTools, check_project
 from .connectors import ConnectorManager
 from .instructions import InstructionSkills
 from .mcp import MCPError, tool_text
@@ -44,6 +47,15 @@ If no tool can do what is needed, you can extend yourself: build_skill (runnable
 
 Available tools:
 """
+
+CODE_PROMPT = """
+## Coding
+You can work on code in the project folder {project}. Look before you change anything: list_files, search_code and
+read_file (it shows line numbers; they are not part of the file). Change files with edit_file (exact text
+replacement, keep edits small and focused) or write_file (new files or full rewrites). The person sees each change
+as a diff{edit_note}. Run code with run_code: Python only, no network, on a copy of the project, so runs never change
+files; use it to test what you wrote (for example the project's unittest tests). After changes, say briefly what
+you changed and how you checked it."""
 
 
 def _schema_hint(schema: dict) -> str:
@@ -76,14 +88,53 @@ def parse_tool_call(text: str) -> Optional[tuple[str, dict, str]]:
 
 class Assistant:
     def __init__(self, ctl, agent: dict, store: ChatStore, router, connectors: ConnectorManager,
-                 instructions: InstructionSkills, skills=None, web=None, max_tokens: int = 3000):
+                 instructions: InstructionSkills, skills=None, web=None, max_tokens: int = 3000,
+                 code: Optional[CodeTools] = None, data_home=None, workspace=None):
         self.ctl, self.agent, self.store, self.router = ctl, agent, store, router
         self.connectors, self.instructions, self.skills, self.web = connectors, instructions, skills, web
         self.max_tokens = max_tokens
+        self.code, self.data_home, self.workspace = code, data_home, workspace
+
+    # ---------- project folder ----------
+    def project(self, chat_id: Optional[str]) -> Optional[dict]:
+        """The chat's project folder and its auto-approve switches, or None without coding tools."""
+        if self.code is None:
+            return None
+        s = ((self.store.get(chat_id) or {}).get("settings") or {}) if chat_id else {}
+        folder = s.get("project") or str(self.workspace)
+        try:
+            root = check_project(folder, self.data_home, self.workspace)
+        except CodeError as exc:
+            return {"root": None, "folder": folder, "error": str(exc), "auto_edit": False, "auto_run": False}
+        return {"root": root, "folder": str(root), "error": None,
+                "auto_edit": bool(s.get("auto_edit")), "auto_run": bool(s.get("auto_run"))}
 
     # ---------- tools ----------
-    def tools(self) -> list[dict]:
+    def tools(self, chat_id: Optional[str] = None) -> list[dict]:
         t: list[dict] = []
+        proj = self.project(chat_id)
+        if proj and proj["root"]:
+            ed = "allow" if proj["auto_edit"] else "ask"
+            rn = "allow" if proj["auto_run"] else "ask"
+            t += [
+                {"id": "list_files", "description": "List files in the project folder (or a subfolder).",
+                 "hint": '{"path"?: string}', "permission": "allow", "kind": "code"},
+                {"id": "read_file", "description": "Read a text file from the project, with line numbers.",
+                 "hint": '{"path": string, "start_line"?: integer, "end_line"?: integer}', "permission": "allow",
+                 "kind": "code"},
+                {"id": "search_code", "description": "Search the project's text files with a regular expression.",
+                 "hint": '{"pattern": string, "path"?: string, "glob"?: string}', "permission": "allow",
+                 "kind": "code"},
+                {"id": "edit_file", "description": "Replace exact text in a project file (old must match once, or "
+                 "set replace_all).", "hint": '{"path": string, "old": string, "new": string, "replace_all"?: '
+                 'boolean}', "permission": ed, "kind": "code"},
+                {"id": "write_file", "description": "Create a project file or replace its whole content.",
+                 "hint": '{"path": string, "content": string}', "permission": ed, "kind": "code"},
+                {"id": "run_code", "description": "Run Python in the sandbox (no network) on a copy of the project: "
+                 "give code, or a script path in the project (or \"-m module\") with args.",
+                 "hint": '{"code"?: string, "script"?: string, "args"?: array, "timeout_s"?: number}',
+                 "permission": rn, "kind": "code"},
+            ]
         if self.web is not None:
             t.append({"id": "web_fetch", "description": "Read a public web page and return its text.",
                       "hint": '{"url": string}', "permission": "allow", "kind": "builtin"})
@@ -119,8 +170,13 @@ class Assistant:
                       "connector": c["connector"], "tool": c["tool"]})
         return t
 
-    def system_prompt(self, tools: list[dict], pinned_skill: Optional[str]) -> str:
+    def system_prompt(self, tools: list[dict], pinned_skill: Optional[str], chat_id: Optional[str] = None) -> str:
         parts = [BASE_PROMPT, time.strftime("Today is %A, %d %B %Y.")]
+        proj = self.project(chat_id)
+        if proj and proj["root"]:
+            note = " and edits are applied right away (the person turned on auto-approve)" if proj["auto_edit"] \
+                else " and approves it before it is written"
+            parts.append(CODE_PROMPT.format(project=proj["folder"], edit_note=note))
         skills = self.instructions.enabled()
         if skills:
             parts.append("\n## Skills\nThese skills hold instructions for specific kinds of work. When the request "
@@ -149,9 +205,11 @@ class Assistant:
         digest = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode()).hexdigest()
         return {"connector": t["connector"], "tool": t["tool"], "arguments_sha256": digest}
 
-    def _run_tool(self, t: dict, args: dict, approval_id: Optional[str] = None) -> dict:
+    def _run_tool(self, t: dict, args: dict, approval_id: Optional[str] = None, chat_id: Optional[str] = None) -> dict:
         """Returns {status: done|pending|denied|error, output, approval_id?}."""
         try:
+            if t["kind"] == "code":
+                return self._code(t, args, approval_id, chat_id)
             if t["id"] == "web_fetch":
                 r = self.web.fetch(self.agent, str(args.get("url", "")), "research")
                 return {"status": "done", "output": f"{r.get('title') or ''}\n{r['content']}"[:40000],
@@ -191,11 +249,78 @@ class Assistant:
         except PermissionError as exc:
             info = exc.args[0] if exc.args else {}
             return {"status": "denied", "output": f"not allowed: {info.get('reason') if isinstance(info, dict) else info}"}
+        except CodeError as exc:
+            return {"status": "error", "output": str(exc)}
         except (MCPError, KeyError, ValueError, OSError) as exc:
             return {"status": "error", "output": f"{type(exc).__name__}: {str(exc)[:600]}"}
         except Exception as exc:  # network errors, sandbox unavailable...
             return {"status": "error", "output": f"{type(exc).__name__}: {str(exc)[:600]}"}
         return {"status": "error", "output": f"unknown tool {t['id']}"}
+
+    # ---------- coding ----------
+    def _code(self, t: dict, args: dict, approval_id: Optional[str], chat_id: Optional[str]) -> dict:
+        proj = self.project(chat_id)
+        if not proj or not proj["root"]:
+            return {"status": "error", "output": (proj or {}).get("error") or "no project folder"}
+        root, tid, ct = proj["root"], t["id"], self.code
+        if tid in ("list_files", "read_file", "search_code"):
+            v = self._gate("files.read", "standard", str(root), {"tool": tid, "path": str(args.get("path", ""))})
+            if not v.allowed:
+                return {"status": "denied", "output": f"not allowed: {v.reason}"}
+            if tid == "list_files":
+                text = ct.list_files(root, str(args.get("path", "")))
+                return {"status": "done", "output": text, "summary": str(args.get("path") or ".")}
+            if tid == "read_file":
+                text = ct.read_file(root, str(args.get("path", "")), args.get("start_line") or 1, args.get("end_line"))
+                return {"status": "done", "output": wrap(text, f"file:{args.get('path')}", "repository").render(),
+                        "summary": str(args.get("path", ""))}
+            text = ct.search(root, str(args.get("pattern", "")), str(args.get("path", "")), str(args.get("glob", "")))
+            n = 0 if text == "no matches" else text.count("\n") + 1
+            return {"status": "done", "output": wrap(text, "search", "repository").render(), "summary": f"{n} matches"}
+        if tid in ("edit_file", "write_file"):
+            path = str(args.get("path", ""))
+            if tid == "edit_file":
+                plan = ct.plan_edit(root, path, str(args.get("old", "")), str(args.get("new", "")),
+                                    bool(args.get("replace_all")))
+            else:
+                plan = ct.plan_write(root, path, str(args.get("content", "")))
+            auto = t["permission"] == "allow" and approval_id is None
+            v = self._gate("files.write.preapproved" if auto else "files.write", "standard", f"{root}/{plan['path']}",
+                           {"project": str(root), "path": plan["path"], "sha256": plan["sha256"]}, approval_id)
+            adds = sum(1 for ln in plan["diff"].splitlines() if ln.startswith("+") and not ln.startswith("+++"))
+            dels = sum(1 for ln in plan["diff"].splitlines() if ln.startswith("-") and not ln.startswith("---"))
+            summary = f"{plan['path']} (+{adds} -{dels})" + (" new file" if plan["created"] else "")
+            if v.effect == "pending_approval":
+                return {"status": "pending", "approval_id": v.approval_id, "output": "", "summary": summary,
+                        "preview": plan["diff"] or "(no change)"}
+            if not v.allowed:
+                return {"status": "denied", "output": f"not written: {v.reason}"}
+            ct.apply(root, plan)
+            self.ctl.audit.append(self.agent["agent_id"], "files.written",
+                                  {"project": str(root), "path": plan["path"], "sha256": plan["sha256"]})
+            return {"status": "done", "output": f"wrote {plan['path']}\n{plan['diff'][:20000]}", "summary": summary,
+                    "preview": plan["diff"]}
+        if tid == "run_code":
+            cmd = ct.command(str(args.get("code") or ""), str(args.get("script") or ""), args.get("args") or [])
+            auto = t["permission"] == "allow" and approval_id is None
+            digest = hashlib.sha256("\0".join(cmd).encode()).hexdigest()
+            v = self._gate("code.run.preapproved" if auto else "code.run", "standard", str(root),
+                           {"project": str(root), "command_sha256": digest, "network": "none"}, approval_id)
+            shown = cmd[2] if cmd[1] == "-c" else " ".join(cmd)
+            if v.effect == "pending_approval":
+                return {"status": "pending", "approval_id": v.approval_id, "output": "", "preview": shown,
+                        "summary": "Python, no network, on a copy of the project"}
+            if not v.allowed:
+                return {"status": "denied", "output": f"not run: {v.reason}"}
+            r = ct.run(root, cmd, args.get("timeout_s") or 60)
+            self.ctl.audit.append(self.agent["agent_id"], "code.result",
+                                  {"project": str(root), "exit_code": r["exit_code"], "timed_out": r["timed_out"]})
+            text = f"exit code {r['exit_code']}{' (timed out)' if r['timed_out'] else ''}, {r['duration_s']} s\n" \
+                   f"--- stdout\n{r['stdout']}\n--- stderr\n{r['stderr']}"
+            return {"status": "done" if r["exit_code"] == 0 else "error",
+                    "output": wrap(text, "code-run", "tool").render(), "preview": shown,
+                    "summary": f"exit {r['exit_code']} in {r['duration_s']} s"}
+        return {"status": "error", "output": f"unknown coding tool {tid}"}
 
     # ---------- self-build ----------
     def _build(self, tid: str, args: dict, approval_id: Optional[str]) -> dict:
@@ -352,7 +477,7 @@ class Assistant:
         meta = m["meta"]
         aid = meta.get("approval_id")
         self.ctl.decide_approval(aid, approve, "admin", "chat")
-        tools = {t["id"]: t for t in self.tools()}
+        tools = {t["id"]: t for t in self.tools(chat_id)}
         t = tools.get(meta["tool"])
         if not approve or t is None:
             meta.update(status="denied", output="The person declined this tool call." if t else "tool no longer available")
@@ -363,8 +488,10 @@ class Assistant:
                     self.connectors.set_permission(t["connector"], t["tool"], "allow")
                 except (ValueError, KeyError):
                     pass
-            r = self._run_tool(dict(t, permission="ask"), meta.get("arguments", {}), aid)
+            r = self._run_tool(dict(t, permission="ask"), meta.get("arguments", {}), aid, chat_id)
             meta.update(status=r["status"], output=r.get("output", ""), summary=r.get("summary", ""))
+            if r.get("preview") is not None:
+                meta["preview"] = r["preview"]
             self.store.set_meta(message_id, meta)
         return [self.store.get_message(message_id)] + self._loop(chat_id)
 
@@ -376,8 +503,8 @@ class Assistant:
         chat = self.store.get(chat_id) or {"settings": {}}
         pinned = chat["settings"].get("skill")
         for _ in range(MAX_STEPS):
-            tools = self.tools()
-            system = self.system_prompt(tools, pinned)
+            tools = self.tools(chat_id)
+            system = self.system_prompt(tools, pinned, chat_id)
             try:
                 reply = self.router.chat(system, self._history(chat_id), self.max_tokens)
             except Exception as exc:
@@ -396,9 +523,11 @@ class Assistant:
                 new.append(self.store.add(chat_id, "tool", "", {"tool": name, "arguments": args, "status": "error",
                                                                 "output": f"there is no tool named {name!r}"}))
                 continue
-            r = self._run_tool(t, args)
+            r = self._run_tool(t, args, None, chat_id)
             meta = {"tool": name, "arguments": args, "status": r["status"], "output": r.get("output", ""),
                     "summary": r.get("summary", ""), "kind": t["kind"], "label": t["description"][:120]}
+            if r.get("preview") is not None:
+                meta["preview"] = r["preview"]
             if r["status"] == "pending":
                 meta["approval_id"] = r["approval_id"]
                 new.append(self.store.add(chat_id, "tool", "", meta))

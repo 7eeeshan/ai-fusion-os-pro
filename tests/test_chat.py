@@ -318,4 +318,123 @@ def test_api_end_to_end(tmp_path, monkeypatch):
     assert c.get("/admin/connectors/import/claude", headers=adm).json() == []
     bad = c.post("/admin/connectors", json={"name": "x", "type": "http", "url": "http://example.com"}, headers=adm)
     assert bad.status_code == 400
+    # project folder for coding: the app's data folder is refused, a code folder is accepted, auto-approve resets
+    assert c.patch(f"/admin/chat/chats/{chat['id']}", json={"project": str(tmp_path)}, headers=adm).status_code == 400
+    proj = tmp_path / "code"
+    proj.mkdir()
+    c.patch(f"/admin/chat/chats/{chat['id']}", json={"project": str(proj)}, headers=adm)
+    c.patch(f"/admin/chat/chats/{chat['id']}", json={"auto_edit": True}, headers=adm)
+    got = c.get(f"/admin/chat/chats/{chat['id']}", headers=adm).json()
+    assert got["project"]["folder"] == str(proj.resolve()) and got["project"]["auto_edit"] is True
+    other = tmp_path / "code2"
+    other.mkdir()
+    c.patch(f"/admin/chat/chats/{chat['id']}", json={"project": str(other)}, headers=adm)
+    assert c.get(f"/admin/chat/chats/{chat['id']}", headers=adm).json()["project"]["auto_edit"] is False
+    names = {t["id"] for t in c.get(f"/admin/chat/tools?chat={chat['id']}", headers=adm).json()}
+    assert {"read_file", "edit_file", "run_code"} <= names
     assert c.delete(f"/admin/chat/chats/{chat['id']}", headers=adm).json()["ok"]
+
+
+# ---------- coding ----------
+from fusion_os.chat.code import CodeError, CodeTools, check_project  # noqa: E402
+
+
+def coder(p, replies, project):
+    r = Script(replies)
+    sb = AutoSandbox(allowed_images=("python:3.12-slim",), mode="process")
+    home = p["tmp"] / "home"
+    home.mkdir(exist_ok=True)
+    code = CodeTools(sb, p["tmp"] / "runs")
+    b = Assistant(p["ctl"], p["agent"], p["store"], r, p["conns"], p["instr"], web=p["web"], code=code,
+                  data_home=home, workspace=home / "workspace")
+    chat = p["store"].create()
+    p["store"].update(chat["id"], settings={"project": str(project)})
+    return b, r, chat["id"]
+
+
+def make_project(tmp):
+    proj = tmp / "proj"
+    (proj / "pkg").mkdir(parents=True)
+    (proj / ".git").mkdir()
+    (proj / ".git" / "config").write_text("secret")
+    (proj / "pkg" / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    (proj / "test_calc.py").write_text("import unittest\nfrom pkg.calc import add\n\n"
+                                       "class T(unittest.TestCase):\n    def test_add(self):\n"
+                                       "        self.assertEqual(add(2, 3), 5)\n")
+    return proj
+
+
+def test_project_folder_rules(tmp_path):
+    home = tmp_path / "home"
+    (home / "workspace" / "a").mkdir(parents=True)
+    (home / "security").mkdir()
+    assert check_project(str(home / "workspace" / "a"), home, home / "workspace") == (home / "workspace" / "a").resolve()
+    for bad in (home, tmp_path, home / "security", Path(tmp_path.anchor)):
+        with pytest.raises(CodeError):
+            check_project(str(bad), home, home / "workspace")
+
+
+def test_code_paths_stay_inside_the_project(tmp_path):
+    proj = make_project(tmp_path)
+    ct = CodeTools(AutoSandbox(mode="process"), tmp_path / "runs")
+    root = proj.resolve()
+    for bad in ("../x", "C:/Windows/x", "//server/share", ".git/config", "pkg/../../x"):
+        with pytest.raises(CodeError):
+            ct.path(root, bad)
+    assert ct.path(root, "/etc/passwd") == root / "etc" / "passwd"  # a leading slash means the project root
+    assert "pkg/calc.py" in ct.list_files(root) and ".git" not in ct.list_files(root)
+    assert "    1  def add(a, b):" in ct.read_file(root, "pkg/calc.py")
+    assert ct.search(root, r"return a") == "pkg/calc.py:2: return a - b"
+
+
+def test_coding_loop_reads_edits_with_approval_and_runs_tests(parts):
+    proj = make_project(parts["tmp"])
+    b, r, cid = coder(parts, [
+        call("search_code", pattern="def add"),
+        call("read_file", path="pkg/calc.py"),
+        call("edit_file", path="pkg/calc.py", old="return a - b", new="return a + b"),
+        call("run_code", script="-m unittest", args=["-q"]),
+        "Fixed add() and the test passes.",
+    ], proj)
+    out = b.send(cid, "fix the failing test")
+    assert [m["meta"].get("tool") for m in out if m["role"] == "tool"] == ["search_code", "read_file", "edit_file"]
+    pending = out[-1]
+    assert pending["meta"]["status"] == "pending" and "+    return a + b" in pending["meta"]["preview"]
+    assert (proj / "pkg" / "calc.py").read_text().endswith("a - b\n")  # nothing written before approval
+    assert "## Coding" in r.seen[0][0] and str(proj.resolve()) in r.seen[0][0]
+    out = b.resume(cid, pending["id"], approve=True)
+    assert out[0]["meta"]["status"] == "done"
+    assert (proj / "pkg" / "calc.py").read_text() == "def add(a, b):\n    return a + b\n"
+    run = out[-1]
+    assert run["meta"]["tool"] == "run_code" and run["meta"]["status"] == "pending"
+    out = b.resume(cid, run["id"], approve=True)
+    assert out[0]["meta"]["status"] == "done", out[0]["meta"]["output"]
+    assert "OK" in out[0]["meta"]["output"] and out[-1]["content"] == "Fixed add() and the test passes."
+    assert not list((parts["tmp"] / "runs").iterdir())  # the run's copy is gone
+
+
+def test_runs_cannot_change_project_files_and_auto_approve(parts):
+    proj = make_project(parts["tmp"])
+    b, _, cid = coder(parts, [call("run_code", code="open('pkg/calc.py','w').write('x')"), "ok",
+                              call("write_file", path="new.txt", content="hi\n"), "written"], proj)
+    s = parts["store"].get(cid)["settings"]
+    parts["store"].update(cid, settings={**s, "auto_run": True, "auto_edit": True})
+    out = b.send(cid, "try to overwrite")
+    assert out[1]["meta"]["status"] == "done", out[1]["meta"]["output"]
+    assert (proj / "pkg" / "calc.py").read_text().startswith("def add")
+    out = b.send(cid, "write a file")
+    assert out[1]["meta"]["status"] == "done" and (proj / "new.txt").read_text() == "hi\n"
+    assert not parts["ctl"].approvals.list("pending")
+
+
+def test_edit_changed_after_preview_is_refused(parts):
+    proj = make_project(parts["tmp"])
+    b, _, cid = coder(parts, [call("write_file", path="pkg/calc.py", content="v1\n"), "ok"], proj)
+    pending = b.send(cid, "rewrite")[-1]
+    # the model's arguments are replayed on approval; a tampered argument no longer matches the approval
+    meta = pending["meta"]
+    meta["arguments"]["content"] = "evil\n"
+    parts["store"].set_meta(pending["id"], meta)
+    out = b.resume(cid, pending["id"], approve=True)
+    assert out[0]["meta"]["status"] == "denied"
+    assert (proj / "pkg" / "calc.py").read_text().startswith("def add")

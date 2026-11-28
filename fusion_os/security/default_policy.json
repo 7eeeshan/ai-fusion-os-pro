@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "description": "Default AI Fusion OS Pro policy. Rules are checked top to bottom; first match wins; no match = deny. The immutable rules in policy.py run before these and cannot be overridden here.",
   "approval_ttl_seconds": 86400,
   "rules": [
@@ -149,6 +149,29 @@
       "zones": [
         "standard",
         "research"
+      ],
+      "effect": "require_approval"
+    },
+    {
+      "id": "chat-auto-approve",
+      "description": "File edits and code runs in a chat where the person turned on auto-approve for that chat's project folder.",
+      "actions": [
+        "files.write.preapproved",
+        "code.run.preapproved"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "allow"
+    },
+    {
+      "id": "code-run",
+      "description": "Running model-written code from the chat on a copy of the project folder, in the sandbox without network: the person approves each run.",
+      "actions": [
+        "code.run"
+      ],
+      "zones": [
+        "standard"
       ],
       "effect": "require_approval"
     },

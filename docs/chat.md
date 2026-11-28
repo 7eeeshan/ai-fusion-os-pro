@@ -18,6 +18,17 @@ the sidebar and links back to the chat.
 - The assistant can also read pages itself with the `web_fetch` tool, and search with `web_search` when a search
   provider is configured (`BRAVE_API_KEY` or `FUSION_OS_SEARXNG_URL` in `desktop.env`).
 
+## Coding
+- Pick a project folder with the **Code** button in the composer (default: the workspace folder in the data folder).
+  The app's own data folder (policy, tokens, audit log) and whole drives can't be projects.
+- The assistant lists, searches and reads files there freely (`.git` is off limits), and changes them with
+  `edit_file` (exact text replacement) or `write_file`. Each change is shown as a diff and waits for **Approve**
+  (`files.write`).
+- `run_code` runs Python in the sandbox without network, on a throwaway copy of the project, so a run can't change
+  your files; use it for tests (`python -m unittest`). Each run waits for approval (`code.run`).
+- In the Code menu you can let one chat apply edits or run code without asking (`files.write.preapproved`,
+  `code.run.preapproved`). Choosing another folder turns both off again. Every write and run is in the audit log.
+
 ## Skills
 Two kinds:
 - **Instruction skills** use Claude's format: a folder with `SKILL.md` (front matter `name` and `description`) and any
@@ -55,5 +66,6 @@ When no tool fits, the assistant can extend itself. Each extension shows what it
 
 ## Policy
 The default policy gains `connector-preapproved` (allow) and `connector-ask` (require approval), and `connector.add`
-joins the privileged actions that need approval. An unmodified earlier default policy is upgraded automatically; a
+joins the privileged actions that need approval. Version 4 adds `code-run` (require approval) and `chat-auto-approve`
+(allow, used only when you switch on auto-approve for a chat). An unmodified earlier default policy is upgraded automatically; a
 policy you edited is left alone, so add these rules yourself if you changed yours.

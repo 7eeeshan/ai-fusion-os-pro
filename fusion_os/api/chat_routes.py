@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from .. import paths
 from ..chat import (Assistant, ChatStore, ConnectorManager, InstructionSkills, claude_skill_folders, preview,
                     read_claude_servers)
+from ..chat.code import CodeError, CodeTools, check_project
+from ..sandbox import AutoSandbox
 
 
 class NewChatBody(BaseModel):
@@ -22,6 +24,9 @@ class ChatPatchBody(BaseModel):
     title: Optional[str] = Field(None, max_length=120)
     starred: Optional[bool] = None
     skill: Optional[str] = None
+    project: Optional[str] = Field(None, max_length=1000)
+    auto_edit: Optional[bool] = None
+    auto_run: Optional[bool] = None
 
 
 class FileBody(BaseModel):
@@ -70,13 +75,22 @@ class SkillAddBody(BaseModel):
     zip_b64: Optional[str] = Field(None, max_length=30_000_000)
 
 
-def mount(app: FastAPI, admin, ctl, router, skills=None, web=None) -> dict[str, Any]:
+def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=None) -> dict[str, Any]:
     store = ChatStore(paths.home() / "chats.db")
     conns = ConnectorManager(paths.home() / "connectors.json")
     instr = InstructionSkills(paths.home() / "instruction_skills")
     token = ctl.register_agent("desktop-chat", ["standard", "research"])
     agent = ctl.agent_for_token(token)
-    bot = Assistant(ctl, agent, store, router, conns, instr, skills=skills, web=web)
+    home = paths.home()
+    workspace = Path(os.environ.get("FUSION_OS_WORKSPACE") or home / "workspace")
+    workspace.mkdir(parents=True, exist_ok=True)
+    runs = home / "code_runs"
+    # Code runs are model-written, so unlike the raw /v1/sandbox/exec route they may use the process sandbox only
+    # because the person approves each run (or turned on auto-approve for that chat's project).
+    sbx = code_sandbox or AutoSandbox(allowed_images=("python:3.12-slim",), workroot=runs, allow_process=True)
+    code = CodeTools(sbx, runs)
+    bot = Assistant(ctl, agent, store, router, conns, instr, skills=skills, web=web, code=code, data_home=home,
+                    workspace=workspace)
     app.state.chat = bot
 
     def _chat(cid: str) -> dict:
@@ -105,7 +119,7 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None) -> dict[str, 
 
     @app.get("/admin/chat/chats/{cid}", dependencies=[Depends(admin)])
     def get_chat(cid: str):
-        return {**_chat(cid), "messages": store.messages(cid)}
+        return {**_chat(cid), "messages": store.messages(cid), "project": bot.project(cid)}
 
     @app.patch("/admin/chat/chats/{cid}", dependencies=[Depends(admin)])
     def patch_chat(cid: str, body: ChatPatchBody):
@@ -113,6 +127,22 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None) -> dict[str, 
         settings = c["settings"]
         if body.skill is not None:
             settings = {**settings, "skill": body.skill or None}
+        if body.project is not None:
+            folder = body.project.strip()
+            if folder:
+                try:
+                    folder = str(check_project(folder, home, workspace))
+                except CodeError as exc:
+                    raise HTTPException(400, str(exc))
+            if folder != (settings.get("project") or ""):
+                # auto-approve is given for one folder; a new folder starts with approvals on again
+                settings = {**settings, "project": folder or None, "auto_edit": False, "auto_run": False}
+        for k in ("auto_edit", "auto_run"):
+            v = getattr(body, k)
+            if v is not None:
+                settings = {**settings, k: v}
+                ctl.audit.append("admin", f"chat.{k}", {"chat_id": cid, "on": v,
+                                                         "project": settings.get("project") or str(workspace)})
         return store.update(cid, title=body.title, starred=body.starred, settings=settings)
 
     @app.delete("/admin/chat/chats/{cid}", dependencies=[Depends(admin)])
@@ -145,8 +175,8 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None) -> dict[str, 
         return {"messages": bot._loop(cid)}
 
     @app.get("/admin/chat/tools", dependencies=[Depends(admin)])
-    def chat_tools():
-        return bot.tools()
+    def chat_tools(chat: str = ""):
+        return bot.tools(chat or None)
 
     @app.get("/admin/chat/model", dependencies=[Depends(admin)])
     def chat_model():

@@ -65,6 +65,8 @@ body.collapsed #side{margin-left:-272px}
 .tool pre{margin:0;padding:10px 14px;border-top:1px solid var(--line);max-height:280px;overflow:auto;font-size:12.5px;background:var(--code);white-space:pre-wrap}
 .tool.pending{border-color:var(--acc);box-shadow:0 0 0 3px var(--accsoft)}
 .tool .ask{padding:4px 14px 12px}.tool .ask .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.tool pre .ad{color:var(--ok)}.tool pre .rm{color:var(--bad)}.tool pre .hd{color:var(--mute)}
+.menu .chk{display:flex;align-items:center;gap:8px}.menu .chk b{width:16px;text-align:center;color:var(--acc)}
 .st-done{color:var(--ok)}.st-error,.st-denied{color:var(--bad)}.st-pending{color:var(--acc)}
 /* markdown */
 .md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
@@ -143,6 +145,7 @@ const ic={link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
  star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>',
  plug:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>',
  tool:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
+ code:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>',
  build:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>',
  globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
  dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
@@ -201,7 +204,7 @@ async function desktopLaunch(){const m=location.hash.match(/^#launch=([A-Za-z0-9
  const r=await fetch("/desktop/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({launch:m[1]})});
  if(!r.ok){toast("Desktop sign-in failed; paste the admin token instead.");return false}ADM=(await r.json()).admin_token;S.setItem("adm",ADM);start();return true}
 /* ---------- state ---------- */
-let CHATS=[],CUR=null,BUSY=false,DRAFT={links:[],files:[],skill:null},ISK=[],TOOLS=[];
+let CHATS=[],CUR=null,BUSY=false,DRAFT={links:[],files:[],skill:null,project:null},ISK=[],TOOLS=[];
 async function start(){await Promise.all([loadChats(),status()]);setInterval(status,20000);route()}
 async function status(){try{const [s,m]=await Promise.all([api("/admin/status"),api("/admin/chat/model")]);
  const eng=s.engine_link&&s.engine_link.connected,sk=s.sandbox.available?"Docker":(s.sandbox.skills&&s.sandbox.skills.available?"process isolation":"none");
@@ -231,21 +234,27 @@ function openSearch(){setNav("search");CUR=null;$("title").textContent="Search";
  $("view").innerHTML=`<div class="page"><input id="sq" placeholder="Search your chats" style="width:100%" oninput="doSearch(this.value)"><div id="sres"></div></div>`;$("sq").focus();doSearch("")}
 async function doSearch(q){const r=await api("/admin/chat/chats?q="+encodeURIComponent(q));$("sres").innerHTML=r.length?r.map(c=>`<div class="card" style="cursor:pointer" onclick="go('chat/${c.id}')"><div class="h"><b>${esc(c.title)}</b><span class="sp"></span><span class="tag">${new Date(c.updated*1000).toLocaleDateString()}</span></div></div>`).join(""):`<div class="empty">No chats match.</div>`}
 /* ---------- chat views ---------- */
-function newChat(){CUR=null;DRAFT={links:[],files:[],skill:null};if(location.hash&&location.hash!=="#")go("");else home()}
-async function loadSide(){try{[ISK,TOOLS]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools")])}catch{}}
+function newChat(){CUR=null;DRAFT={links:[],files:[],skill:null,project:null};if(location.hash&&location.hash!=="#")go("");else home()}
+async function loadSide(){try{[ISK,TOOLS]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools"+(CUR?"?chat="+CUR.id:""))])}catch{}}
 function home(){setNav("");CUR=null;renderList();$("title").textContent="";
  const hr=new Date().getHours(),g=hr<5?"Good night":hr<12?"Good morning":hr<18?"Good afternoon":"Good evening";
  $("view").innerHTML=`<div class="hello"><h1>${g}. How can I help?</h1><div id="slot"></div><div class="chips">
-  ${["Summarize a web page I paste","Build me a skill that converts CSV to JSON","What can my connectors do?","Plan my day"].map(s=>`<button class="chip" onclick="useChip(this)">${esc(s)}</button>`).join("")}</div></div>`;
+  ${["Summarize a web page I paste","Build me a skill that converts CSV to JSON","Find and fix the failing test in my project","What can my connectors do?"].map(s=>`<button class="chip" onclick="useChip(this)">${esc(s)}</button>`).join("")}</div></div>`;
  composer(true);loadSide()}
 function useChip(b){const t=$("ta");t.value=b.textContent;t.focus();autosize()}
 async function openChat(id,fromHash){setNav("");try{CUR=await api("/admin/chat/chats/"+id)}catch{go("");return}renderList();$("title").textContent=CUR.title;
- DRAFT={links:[],files:[],skill:CUR.settings.skill||null};renderMsgs();composer(false);loadSide()}
+ DRAFT={links:[],files:[],skill:CUR.settings.skill||null,project:null};renderMsgs();composer(false);loadSide()}
 function attChip(a){if(a.type==="link")return`<a class="att ${a.injection&&a.injection.length?"warn":""}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="${esc(a.url)}">${ic.link}<span>${esc(a.title||a.url)}</span></a>`;
  return`<span class="att">${ic.file}<span>${esc(a.name)}</span></span>`}
-const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector"};
+const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector",list_files:"Listed files",read_file:"Read file",search_code:"Searched the code",edit_file:"Edit file",write_file:"Write file",run_code:"Run code"};
 function toolTitle(m){const t=m.meta.tool||"";if(TL[t])return TL[t];if(t.startsWith("skill__"))return"Ran skill "+t.slice(7);const p=t.split("__");return p.length>1?`${p[1]} · ${p[0]}`:t}
-function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:t0(me.tool);
+function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:me.kind==="code"?ic.code:t0(me.tool);
+ if(me.kind==="code"&&me.preview!=null){const isDiff=me.tool!=="run_code";const body=isDiff?diffHtml(String(me.preview).slice(0,20000)):esc(String(me.preview).slice(0,20000));
+  if(st==="pending")return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${body}</pre></details>
+  <div class="ask">${isDiff?"The assistant wants to change this file in your project.":"The assistant wants to run this code. It runs in the sandbox without network, on a copy of your project, so your files are not changed."}
+  <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button><button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`;
+  return`<details class="tool"><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
+  <pre>${body}${isDiff?"":"\n\n"+esc(String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").slice(0,12000))}</pre></details>`}
  const args=JSON.stringify(me.arguments||{},null,1);
  if(st==="pending"){const canAlways=me.kind==="connector";
   let detail=args;if(me.tool==="build_skill"&&me.arguments&&me.arguments.files){detail=Object.entries(me.arguments.files).map(([k,v])=>`── ${k}\n${v}`).join("\n\n")}
@@ -256,6 +265,7 @@ function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?i
  return`<details class="tool"><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
   <pre>${esc("arguments: "+args.slice(0,4000)+"\n\nresult:\n"+String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").slice(0,12000))}</pre></details>`}
 function t0(t){return t==="web_fetch"||t==="web_search"?ic.globe:t==="read_skill"?ic.star:ic.tool}
+function diffHtml(t){return esc(t).split("\n").map(l=>l.startsWith("+++")||l.startsWith("---")||l.startsWith("@@")?`<span class="hd">${l}</span>`:l.startsWith("+")?`<span class="ad">${l}</span>`:l.startsWith("-")?`<span class="rm">${l}</span>`:l).join("\n")}
 function renderMsgs(extra=""){const ms=CUR.messages;let h="";
  ms.forEach((m,i)=>{
   if(m.role==="user"){const a=m.meta.attachments||[];h+=`<div class="msg user"><div style="max-width:85%;display:flex;flex-direction:column;align-items:flex-end">${a.length?`<div class="atts">${a.map(attChip).join("")}</div>`:""}
@@ -274,6 +284,7 @@ function composer(isHome){const c=$("composer");c.style.display="";
   <div class="bar"><button class="iconbtn" data-menu title="Add" onclick="plusMenu(event)">${ic.plus}</button>
   <button class="pill ${DRAFT.skill?"on":""}" data-menu onclick="skillMenu(event)">${ic.star.replace('<svg','<svg width="14" height="14"')} ${esc(DRAFT.skill||"Skills")}</button>
   <button class="pill" data-menu onclick="toolsMenu(event)">${ic.plug.replace('<svg','<svg width="14" height="14"')} Tools</button>
+  <button class="pill ${projOn()?"on":""}" data-menu onclick="projectMenu(event)" title="${esc(projFolder()||"")}">${ic.code.replace('<svg','<svg width="14" height="14"')} ${esc(projLabel())}</button>
   <span class="sp"></span><button class="send" id="sendb" title="Send" onclick="send()">${ic.up}</button></div></div>
   <div class="hint">Links are read as untrusted text. Tools that pay, send or delete always ask first. Answers can be wrong; check what matters.</div>`;
  if(isHome){c.style.display="none";$("slot").innerHTML=html.replace('class="hint"','class="hint" style="margin-top:10px"')}else c.innerHTML=html;
@@ -290,11 +301,25 @@ function pickFile(){closeMenus();const i=document.createElement("input");i.type=
 function skillMenu(ev){const en=ISK.filter(s=>s.enabled);menuAt(ev,`<div class="sub">Use a skill for this chat</div>${en.length?en.map(s=>`<button onclick="pickSkill('${esc(s.name)}')" title="${esc(s.description)}">${ic.star}${esc(s.title||s.name)}</button>`).join(""):`<div class="sub">No skills yet.</div>`}
  ${DRAFT.skill?`<button onclick="pickSkill(null)">✕ Stop using ${esc(DRAFT.skill)}</button>`:""}<button onclick="closeMenus();go('skills')">${ic.plus}Add or import skills</button>`)}
 async function pickSkill(n){closeMenus();DRAFT.skill=n;if(CUR)await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{skill:n||""}});composer(!CUR)}
-function toolsMenu(ev){const by={};TOOLS.forEach(t=>{const g=t.kind==="connector"?t.description.match(/^\[([^\]]+)\]/)?.[1]||"Connector":t.kind==="skill"?"Sandboxed skills":t.kind==="build"?"Self-build":"Built in";(by[g]=by[g]||[]).push(t)});
+function projFolder(){return CUR?(CUR.project&&CUR.project.folder)||"":DRAFT.project||""}
+function projOn(){return CUR?!!(CUR.settings&&CUR.settings.project):!!DRAFT.project}
+function projLabel(){const f=projFolder();if(!projOn())return"Code";const n=f.split(/[\\/]/).filter(Boolean).pop();return n||f}
+function projectMenu(ev){const p=CUR&&CUR.project,ae=!!(p&&p.auto_edit),ar=!!(p&&p.auto_run);
+ menuAt(ev,`<div class="sub">Project folder for coding</div><div class="sub" style="font-family:Consolas,monospace;word-break:break-all">${esc(projFolder()||"(the workspace folder)")}</div>
+ ${p&&p.error?`<div class="sub" style="color:var(--bad)">${esc(p.error)}</div>`:""}
+ <button onclick="setProject()">${ic.code}Choose a folder…</button>${projOn()?`<button onclick="setProject('')">✕ Use the workspace folder</button>`:""}
+ ${CUR?`<div class="sub">Without asking each time</div><button class="chk" onclick="setAuto('auto_edit',${!ae})"><b>${ae?"✓":""}</b>Apply file edits</button><button class="chk" onclick="setAuto('auto_run',${!ar})"><b>${ar?"✓":""}</b>Run code (sandbox, no network)</button>`:""}`)}
+async function setProject(v){closeMenus();if(v===undefined){v=prompt("Folder with your code (full path, for example C:\\Users\\you\\projects\\app)",projFolder());if(v===null)return;v=v.trim()}
+ if(!CUR){DRAFT.project=v||null;composer(true);return}
+ try{await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{project:v}});await refresh();composer(false);loadSide();toast(v?"Project folder set":"Using the workspace folder")}catch(e){toast(String(e.message||e))}}
+async function setAuto(k,on){closeMenus();if(on&&!confirm(k==="auto_edit"?"Let the assistant change files in this project without asking, for this chat? You can turn it off here at any time.":"Let the assistant run code without asking, for this chat? Code runs in the sandbox without network, on a copy of the project."))return;
+ await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{[k]:on}});await refresh();composer(false);loadSide()}
+function toolsMenu(ev){const by={};TOOLS.forEach(t=>{const g=t.kind==="connector"?t.description.match(/^\[([^\]]+)\]/)?.[1]||"Connector":t.kind==="skill"?"Sandboxed skills":t.kind==="build"?"Self-build":t.kind==="code"?"Coding":"Built in";(by[g]=by[g]||[]).push(t)});
  menuAt(ev,`<div style="max-height:360px;overflow:auto">${Object.entries(by).map(([g,ts])=>`<div class="sub">${esc(g)}</div>`+ts.map(t=>`<div style="padding:4px 10px;font-size:13px;display:flex;gap:8px"><span class="n" style="font-family:Consolas,monospace">${esc(t.tool||t.id)}</span><span class="sp" style="flex:1"></span><span class="tag ${t.permission==="ask"?"warn":"ok"}">${t.permission==="ask"?"asks":"allowed"}</span></div>`).join("")).join("")}</div><button onclick="closeMenus();go('connectors')">${ic.plug}Add connectors</button>`)}
 async function send(){if(BUSY)return;const t=$("ta");const text=t.value.trim();if(!text&&!DRAFT.links.length&&!DRAFT.files.length)return;
  BUSY=true;$("sendb").disabled=true;
- try{if(!CUR){const c=await api("/admin/chat/chats",{method:"POST",body:{}});CUR={...c,messages:[]};history.replaceState(null,"","#chat/"+c.id);$("title").textContent="New chat";composer(false)}
+ try{if(!CUR){const c=await api("/admin/chat/chats",{method:"POST",body:{}});CUR={...c,messages:[]};history.replaceState(null,"","#chat/"+c.id);$("title").textContent="New chat";
+   if(DRAFT.project){try{await api(`/admin/chat/chats/${c.id}`,{method:"PATCH",body:{project:DRAFT.project}});CUR={...(await api("/admin/chat/chats/"+c.id)),messages:[]}}catch(e){toast(String(e.message||e))}}composer(false)}
   const body={text,links:DRAFT.links,files:DRAFT.files,skill:DRAFT.skill};
   CUR.messages.push({id:-1,role:"user",content:text,meta:{attachments:DRAFT.links.map(u=>({type:"link",url:u,title:u})).concat(DRAFT.files.map(f=>({type:"file",name:f.name}))),skill:DRAFT.skill}});
   DRAFT.links=[];DRAFT.files=[];$("ta").value="";drawDraft();autosize();thinking();
