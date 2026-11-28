@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Fusion OS Pro</title>
+<style>
+:root{--bg:#faf9f6;--side:#f1efea;--panel:#ffffff;--line:#e4e1d9;--text:#1d1c1a;--mute:#6f6b63;--soft:#ece9e2;
+ --acc:#5a63e6;--acc2:#4a52cc;--accsoft:#e9eafc;--ok:#2f8f4e;--warn:#a86b00;--bad:#c2372f;--code:#f4f2ed;--shadow:0 1px 3px rgba(0,0,0,.06),0 6px 24px rgba(0,0,0,.05)}
+:root[data-theme=dark]{--bg:#1e1e1c;--side:#171716;--panel:#262624;--line:#3a3935;--text:#ecebe7;--mute:#a19e95;--soft:#2f2e2b;
+ --acc:#8189ff;--acc2:#9aa0ff;--accsoft:#2c2e4a;--ok:#5ec27f;--warn:#e0a63a;--bad:#ef6a62;--code:#2b2a27;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.3)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1e1e1c;--side:#171716;--panel:#262624;--line:#3a3935;--text:#ecebe7;--mute:#a19e95;--soft:#2f2e2b;
+ --acc:#8189ff;--acc2:#9aa0ff;--accsoft:#2c2e4a;--ok:#5ec27f;--warn:#e0a63a;--bad:#ef6a62;--code:#2b2a27;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.3)}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font:15px/1.55 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);display:flex;overflow:hidden}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,textarea,select{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--acc)}
+a{color:var(--acc)}
+.btn{background:var(--acc);color:#fff;border-radius:10px;padding:8px 14px;font-weight:550}.btn:hover{background:var(--acc2)}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}.btn.ghost:hover{background:var(--soft)}
+.btn.danger{background:var(--bad)}.btn.small{padding:4px 10px;font-size:13px;border-radius:8px}
+.btn:disabled{opacity:.5;cursor:default}
+/* sidebar */
+#side{width:272px;flex-shrink:0;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;transition:margin .2s}
+body.collapsed #side{margin-left:-272px}
+.brand{display:flex;align-items:center;gap:10px;padding:14px 14px 8px;font-weight:650;font-size:15px}
+.brand svg{width:26px;height:26px}.brand .sp{flex:1}
+.iconbtn{width:32px;height:32px;border-radius:8px;display:inline-grid;place-items:center;color:var(--mute)}.iconbtn:hover{background:var(--soft);color:var(--text)}
+.iconbtn svg{width:18px;height:18px}
+.navbtn{display:flex;align-items:center;gap:10px;margin:1px 8px;padding:8px 10px;border-radius:9px;color:var(--text);text-align:left;width:calc(100% - 16px)}
+.navbtn:hover,.navbtn.on{background:var(--soft)}.navbtn svg{width:18px;height:18px;color:var(--mute);flex-shrink:0}
+.navbtn.new{color:var(--acc);font-weight:600}.navbtn.new svg{color:var(--acc)}
+.sect{font-size:12px;color:var(--mute);padding:14px 18px 4px;font-weight:600}
+#chatlist{flex:1;overflow:auto;padding-bottom:8px}
+.ci{display:flex;align-items:center;margin:0 8px;border-radius:9px}.ci:hover,.ci.on{background:var(--soft)}
+.ci button.t{flex:1;text-align:left;padding:7px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.ci .iconbtn{opacity:0;width:28px;height:28px}.ci:hover .iconbtn{opacity:1}
+.foot{border-top:1px solid var(--line);padding:10px 14px;font-size:12.5px;color:var(--mute);display:flex;flex-direction:column;gap:3px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--mute)}.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+/* main */
+#main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+#top{height:52px;display:flex;align-items:center;gap:8px;padding:0 14px;flex-shrink:0}
+#top .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+#top .sp{flex:1}
+#view{flex:1;overflow:auto}
+.col{max-width:780px;margin:0 auto;padding:8px 24px 24px}
+/* empty */
+.hello{max-width:780px;margin:12vh auto 0;padding:0 24px;text-align:center}
+.hello h1{font-weight:500;font-size:34px;margin:0 0 24px;letter-spacing:-.01em}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 12px;font-size:13.5px;color:var(--mute)}.chip:hover{color:var(--text);border-color:var(--mute)}
+/* messages */
+.msg{margin:22px 0}
+.msg.user{display:flex;justify-content:flex-end}
+.msg.user .b{background:var(--soft);border-radius:18px;padding:10px 16px;max-width:100%;white-space:pre-wrap;word-wrap:break-word}
+.msg.assistant .b{word-wrap:break-word}
+.atts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-bottom:6px}
+.att{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:4px 10px;font-size:13px;max-width:320px}
+.att span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.att svg{width:14px;height:14px;flex-shrink:0;color:var(--mute)}
+.att .x{color:var(--mute);margin-left:2px}.att.warn{border-color:var(--warn)}
+.meta{font-size:12px;color:var(--mute);margin-top:6px;display:flex;gap:10px;align-items:center}
+.meta .iconbtn{width:26px;height:26px}.meta .iconbtn svg{width:15px;height:15px}
+.notice{font-size:13.5px;color:var(--mute);border-left:3px solid var(--warn);padding:4px 12px;margin:14px 0}
+.tool{border:1px solid var(--line);border-radius:12px;margin:12px 0;background:var(--panel);font-size:14px;overflow:hidden}
+.tool summary{cursor:pointer;padding:9px 14px;display:flex;align-items:center;gap:8px;list-style:none}.tool summary::-webkit-details-marker{display:none}
+.tool summary svg{width:16px;height:16px;color:var(--mute);flex-shrink:0}.tool summary .s{color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool pre{margin:0;padding:10px 14px;border-top:1px solid var(--line);max-height:280px;overflow:auto;font-size:12.5px;background:var(--code);white-space:pre-wrap}
+.tool.pending{border-color:var(--acc);box-shadow:0 0 0 3px var(--accsoft)}
+.tool .ask{padding:4px 14px 12px}.tool .ask .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.tool pre .ad{color:var(--ok)}.tool pre .rm{color:var(--bad)}.tool pre .hd{color:var(--mute)}
+#art{position:fixed;top:0;right:0;bottom:0;width:min(50vw,760px);background:var(--panel);border-left:1px solid var(--line);z-index:40;display:flex;flex-direction:column}
+#art .ah{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}#art iframe{flex:1;border:0;background:#fff}
+body.arton #main{margin-right:min(50vw,760px)}@media (max-width:760px){#art{width:100vw}body.arton #main{margin-right:0}}
+.tool img.shot{display:block;max-width:100%;border-top:1px solid var(--line);cursor:zoom-in}
+.menu .chk{display:flex;align-items:center;gap:8px}.menu .chk b{width:16px;text-align:center;color:var(--acc)}
+.st-done{color:var(--ok)}.st-error,.st-denied{color:var(--bad)}.st-pending{color:var(--acc)}
+/* markdown */
+.md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+.md p{margin:.6em 0}.md h1,.md h2,.md h3,.md h4{margin:1.1em 0 .4em;line-height:1.3}.md h1{font-size:1.45em}.md h2{font-size:1.25em}.md h3{font-size:1.1em}
+.md ul,.md ol{padding-left:1.5em;margin:.5em 0}.md li{margin:.2em 0}
+.md code{background:var(--code);border-radius:5px;padding:1px 5px;font:13px/1.5 "Cascadia Code",Consolas,ui-monospace,monospace}
+.md pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:0;overflow:hidden;margin:.8em 0}
+.md pre .bar{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--mute);padding:4px 10px;border-bottom:1px solid var(--line)}
+.md pre code{display:block;padding:10px 12px;overflow:auto;background:none;white-space:pre}
+.md blockquote{border-left:3px solid var(--line);margin:.6em 0;padding:0 12px;color:var(--mute)}
+.md table{border-collapse:collapse;margin:.8em 0;font-size:14px;display:block;overflow:auto}.md th,.md td{border:1px solid var(--line);padding:6px 10px;text-align:left}.md th{background:var(--soft)}
+.md hr{border:0;border-top:1px solid var(--line);margin:1.2em 0}
+.typing{display:inline-flex;gap:4px;padding:8px 0}.typing i{width:7px;height:7px;border-radius:50%;background:var(--mute);animation:b 1.2s infinite}.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,80%,100%{opacity:.25}40%{opacity:1}}
+/* composer */
+#composer{padding:0 24px 18px;flex-shrink:0}
+.box{max-width:732px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:10px 12px 8px}
+.box:focus-within{border-color:var(--mute)}
+.box textarea{width:100%;border:0;background:transparent;resize:none;padding:6px 6px;max-height:260px;min-height:28px;line-height:1.5}
+.box .bar{display:flex;align-items:center;gap:6px}.box .bar .sp{flex:1}
+.send{width:34px;height:34px;border-radius:10px;background:var(--acc);color:#fff;display:grid;place-items:center}.send:disabled{opacity:.35}.send svg{width:18px;height:18px}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:13px;color:var(--mute)}
+.pill.on{color:var(--acc);border-color:var(--acc);background:var(--accsoft)}
+.hint{max-width:732px;margin:6px auto 0;text-align:center;font-size:12px;color:var(--mute)}
+.menu{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:230px;z-index:20}
+.menu button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-size:14px}.menu button:hover{background:var(--soft)}
+.menu svg{width:17px;height:17px;color:var(--mute)}.menu .sub{font-size:12px;color:var(--mute);padding:6px 10px 2px}
+/* pages */
+.page{max-width:900px;margin:0 auto;padding:12px 28px 40px}
+.iconbtn.rate{font-size:13px;opacity:.55;filter:grayscale(1)}.iconbtn.rate.on,.iconbtn.rate:hover{opacity:1;filter:none}
+.fb textarea{width:100%;min-height:70px;margin:6px 0;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--bg);color:var(--fg);font:inherit}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px;margin:6px 0}.kv b{font-weight:550;color:var(--mute)}
+.page h2{font-size:24px;font-weight:550;margin:6px 0 4px}.page .lead{color:var(--mute);margin:0 0 20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:10px 0}
+.card .h{display:flex;align-items:center;gap:10px}.card .h b{font-weight:600}.card .h .sp{flex:1}.card .d{color:var(--mute);font-size:13.5px;margin-top:4px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:8px 0 16px}.tabs button{padding:8px 12px;color:var(--mute);border-bottom:2px solid transparent;margin-bottom:-1px}.tabs button.on{color:var(--text);border-color:var(--acc)}
+.toolrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}.toolrow:first-child{border-top:0}
+.toolrow .n{font-family:"Cascadia Code",Consolas,monospace;font-size:13px}.toolrow .dd{color:var(--mute);font-size:12.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{padding:3px 9px;font-size:12.5px;color:var(--mute)}.seg button.on{background:var(--accsoft);color:var(--acc);font-weight:600}.seg button:disabled{opacity:.35;cursor:not-allowed}
+.switch{position:relative;width:36px;height:20px;border-radius:20px;background:var(--line);flex-shrink:0;transition:.15s}.switch.on{background:var(--acc)}.switch:after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}.switch.on:after{left:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2 label,.stack label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute)}
+.stack{display:flex;flex-direction:column;gap:10px}
+.tag{font-size:11.5px;border-radius:6px;padding:1px 7px;background:var(--soft);color:var(--mute)}.tag.warn{color:var(--warn)}.tag.bad{color:var(--bad)}.tag.ok{color:var(--ok)}
+.empty{color:var(--mute);padding:20px 0;text-align:center}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:14px;display:none;z-index:50;max-width:80%}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:grid;place-items:center;z-index:40}
+.modal .in{background:var(--panel);border-radius:16px;padding:20px;width:min(720px,92vw);max-height:84vh;overflow:auto;box-shadow:var(--shadow)}
+.login{max-width:440px;margin:18vh auto;padding:0 24px;text-align:center}.login input{width:100%;margin:14px 0}
+@media (max-width:760px){#side{position:absolute;z-index:30;height:100%}body:not(.collapsed) #main:before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.3);z-index:25}.grid2{grid-template-columns:1fr}}
+</style></head>
+<body class="">
+<aside id="side">
+ <div class="brand"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4"><circle cx="11" cy="13" r="7" stroke="#5a63e6"/><circle cx="21" cy="13" r="7" stroke="#9a6be0"/><circle cx="16" cy="21" r="7" stroke="#3b8fd6"/></svg>
+  <span>AI Fusion OS Pro</span><span class="sp"></span><button class="iconbtn" title="Hide sidebar" onclick="toggleSide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button></div>
+ <button class="navbtn new" onclick="newChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>New chat</button>
+ <button class="navbtn" data-nav="search" onclick="openSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg>Search chats</button>
+ <button class="navbtn" data-nav="projects" onclick="go('projects')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Projects</button>
+ <button class="navbtn" data-nav="skills" onclick="go('skills')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>Skills</button>
+ <button class="navbtn" data-nav="connectors" onclick="go('connectors')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>Connectors</button>
+ <button class="navbtn" data-nav="improve" onclick="go('improve')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19l5-5 4 4 7-8"/><path d="M15 10h5v5"/></svg>Improve</button>
+ <button class="navbtn" onclick="location.href='/dashboard'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Mission Control</button>
+ <div class="sect">Recents</div>
+ <div id="chatlist"></div>
+ <div class="foot" id="foot"><div><span class="dot"></span>Connecting…</div></div>
+</aside>
+<section id="main">
+ <div id="top"><button class="iconbtn" id="showside" title="Show sidebar" onclick="toggleSide()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
+  <span class="title" id="title"></span><span class="sp"></span>
+  <button class="iconbtn" title="Light or dark" onclick="cycleTheme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button></div>
+ <div id="view"></div>
+ <div id="composer" style="display:none"></div>
+</section>
+<div id="toast"></div>
+<script>
+"use strict";
+const S=sessionStorage;let ADM=S.getItem("adm");
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ic={screen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+ file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+ star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19l1-5.8-4.3-4.1 5.9-.9z"/></svg>',
+ plug:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>',
+ tool:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
+ code:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>',
+ build:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>',
+ globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+ dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+ copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+ retry:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4"/></svg>',
+ plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+ up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+ trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>'};
+function toast(t){const e=$("toast");e.textContent=t;e.style.display="block";clearTimeout(e._t);e._t=setTimeout(()=>e.style.display="none",4200)}
+async function api(path,opt={}){const h={"Authorization":"Bearer "+ADM};if(opt.body!==undefined&&typeof opt.body!=="string"){opt.body=JSON.stringify(opt.body);h["Content-Type"]="application/json"}
+ const r=await fetch(path,{...opt,headers:{...h,...(opt.headers||{})}});const txt=await r.text();let d;try{d=JSON.parse(txt)}catch{d=txt}
+ if(r.status===401||r.status===403&&path.startsWith("/admin/status")){showLogin();throw new Error("sign in needed")}
+ if(!r.ok){const m=typeof d==="object"?(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||d)):d;toast(m);throw new Error(m)}return d}
+/* ---------- theme ---------- */
+function applyTheme(){let t="";try{t=localStorage.getItem("theme")||""}catch{}if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme}
+function cycleTheme(){const dark=matchMedia("(prefers-color-scheme: dark)").matches;const cur=document.documentElement.dataset.theme||(dark?"dark":"light");
+ try{localStorage.setItem("theme",cur==="dark"?"light":"dark")}catch{}applyTheme()}
+applyTheme();
+function toggleSide(){document.body.classList.toggle("collapsed");$("showside").style.display=document.body.classList.contains("collapsed")?"":"none"}
+if(innerWidth<760)toggleSide();
+/* ---------- markdown (escape first, then a small safe subset) ---------- */
+function inline(s){
+ const codes=[];s=s.replace(/`([^`\n]+)`/g,(_,c)=>{codes.push(c);return"\u0000"+(codes.length-1)+"\u0000"});
+ s=esc(s);
+ s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g,(_,t,u)=>`<a href="${u}" target="_blank" rel="noopener noreferrer">${t}</a>`);
+ s=s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:!?])/g,(_,p,u)=>`${p}<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+ s=s.replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1<em>$2</em>").replace(/~~([^~\n]+)~~/g,"<del>$1</del>");
+ return s.replace(/\u0000(\d+)\u0000/g,(_,i)=>`<code>${esc(codes[+i])}</code>`)}
+function md(src){
+ const lines=String(src||"").replace(/\r/g,"").split("\n");let out="",i=0;
+ const para=[];const flush=()=>{if(para.length){out+="<p>"+para.map(inline).join("<br>")+"</p>";para.length=0}};
+ while(i<lines.length){const l=lines[i];
+  let m=l.match(/^```\s*([\w+-]*)/);
+  if(m){flush();const lang=m[1];const buf=[];i++;while(i<lines.length&&!/^```/.test(lines[i]))buf.push(lines[i++]);i++;
+   const prev=/^(html|svg|xml)$/i.test(lang)&&/<(html|body|div|svg|canvas|style|script|!doctype)/i.test(buf.join("\n"))||/^(html)$/i.test(lang);
+   out+=`<pre><div class="bar"><span>${esc(lang||"text")}</span>${prev?`<button class="pill" style="margin-left:auto;margin-right:4px" title="Preview" onclick="openArtifact(this)">Preview</button>`:""}<button class="iconbtn" title="Copy" onclick="copyCode(this)">${ic.copy}</button></div><code>${esc(buf.join("\n"))}</code></pre>`;continue}
+  if(/^\s*$/.test(l)){flush();i++;continue}
+  m=l.match(/^(#{1,4})\s+(.*)/);if(m){flush();out+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`;i++;continue}
+  if(/^\s*([-*_])\s*\1\s*\1[\s\1]*$/.test(l)){flush();out+="<hr>";i++;continue}
+  if(/^\s*>/.test(l)){flush();const buf=[];while(i<lines.length&&/^\s*>/.test(lines[i]))buf.push(lines[i++].replace(/^\s*>\s?/,""));out+="<blockquote>"+md(buf.join("\n"))+"</blockquote>";continue}
+  if(/^\s*\|.*\|\s*$/.test(l)&&i+1<lines.length&&/^\s*\|?\s*:?-{2,}/.test(lines[i+1])){flush();const row=x=>x.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim());
+   const head=row(l);i+=2;let t="<table><thead><tr>"+head.map(c=>`<th>${inline(c)}</th>`).join("")+"</tr></thead><tbody>";
+   while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i])){t+="<tr>"+row(lines[i]).map(c=>`<td>${inline(c)}</td>`).join("")+"</tr>";i++}out+=t+"</tbody></table>";continue}
+  m=l.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)/);
+  if(m){flush();const ordered=/\d/.test(m[2]);const items=[];
+   while(i<lines.length){const mm=lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)/);
+    if(mm&&mm[1].length<=m[1].length+1){items.push(mm[3]);i++}else if(/^\s{2,}\S/.test(lines[i])&&items.length){items[items.length-1]+="\n"+lines[i].trim();i++}else break}
+   out+=(ordered?"<ol>":"<ul>")+items.map(x=>"<li>"+x.split("\n").map(inline).join("<br>")+"</li>").join("")+(ordered?"</ol>":"</ul>");continue}
+  para.push(l);i++}
+ flush();return out}
+function copyCode(b){const c=b.closest("pre").querySelector("code").textContent;navigator.clipboard.writeText(c).then(()=>toast("Copied"))}
+/* ---------- sign-in ---------- */
+function showLogin(){$("composer").style.display="none";$("view").innerHTML=`<div class="login"><h2>Sign in</h2><p style="color:var(--mute)">The desktop app signs you in by itself. In a browser, paste the admin token
+ (<code>python -m fusion_os admin-token</code>). It stays in this tab only.</p><input id="tok" type="password" placeholder="Admin token"><button class="btn" onclick="login($('tok').value)">Continue</button></div>`}
+async function login(tok){ADM=(tok||"").trim();try{await api("/admin/status")}catch{return}S.setItem("adm",ADM);start()}
+async function desktopLaunch(){const m=location.hash.match(/^#launch=([A-Za-z0-9_-]+)$/);if(!m)return false;history.replaceState(null,"",location.pathname);
+ const r=await fetch("/desktop/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({launch:m[1]})});
+ if(!r.ok){toast("Desktop sign-in failed; paste the admin token instead.");return false}ADM=(await r.json()).admin_token;S.setItem("adm",ADM);start();return true}
+/* ---------- state ---------- */
+let CHATS=[],CUR=null,BUSY=false,DRAFT={links:[],files:[],skill:null,project:null},ISK=[],TOOLS=[];
+async function start(){await Promise.all([loadChats(),status()]);setInterval(status,20000);route()}
+async function status(){try{const [s,m]=await Promise.all([api("/admin/status"),api("/admin/chat/model")]);
+ const eng=s.engine_link&&s.engine_link.connected,sk=s.sandbox.available?"Docker":(s.sandbox.skills&&s.sandbox.skills.available?"process isolation":"none");
+ $("foot").innerHTML=(s.emergency_stop?`<div><span class="dot bad"></span><b style="color:var(--bad)">Emergency stop is on</b></div>`:"")+
+  `<div><span class="dot ${eng?"ok":"warn"}"></span>${eng?"AI Fusion Engine connected":"Engine not connected"}</div>`+
+  `<div><span class="dot ${sk==="none"?"bad":"ok"}"></span>Sandbox: ${esc(sk)}</div>`+
+  (s.pending_approvals?`<div><span class="dot warn"></span><a href="/dashboard">${s.pending_approvals} pending approval(s)</a></div>`:"")+
+  `<div title="Model order">Models: ${esc(m.providers.join(" → "))}</div>`}catch{}}
+function route(){const h=location.hash.slice(1);if(h.startsWith("chat/"))openChat(h.slice(5),true);else if(h==="skills")pageSkills();else if(h==="connectors")pageConnectors();else if(h==="improve")pageImprove();else if(h==="projects")pageProjects();else if(h.startsWith("project/"))pageProject(h.slice(8));else home()}
+window.addEventListener("hashchange",()=>{if(!location.hash.startsWith("#launch="))route()});
+function go(p){location.hash=p}
+function setNav(n){document.querySelectorAll(".navbtn[data-nav]").forEach(b=>b.classList.toggle("on",b.dataset.nav===n))}
+async function loadChats(q=""){CHATS=await api("/admin/chat/chats?q="+encodeURIComponent(q));renderList()}
+function renderList(){$("chatlist").innerHTML=CHATS.length?CHATS.map(c=>`<div class="ci ${CUR&&CUR.id===c.id?"on":""}"><button class="t" onclick="go('chat/${c.id}')" title="${esc(c.title)}">${c.starred?"★ ":""}${esc(c.title)}</button>
+ <button class="iconbtn" title="Options" onclick="chatMenu(event,'${c.id}')">${ic.dots}</button></div>`).join(""):`<div class="empty" style="font-size:13px">No chats yet</div>`}
+function closeMenus(){document.querySelectorAll(".menu").forEach(m=>m.remove())}
+document.addEventListener("click",e=>{if(!e.target.closest(".menu")&&!e.target.closest("[data-menu]"))closeMenus()});
+function menuAt(ev,html){closeMenus();ev.stopPropagation();const m=document.createElement("div");m.className="menu";m.innerHTML=html;document.body.appendChild(m);
+ const r=ev.currentTarget.getBoundingClientRect();let top=r.bottom+4,left=r.left;const mh=m.offsetHeight,mw=m.offsetWidth;
+ if(top+mh>innerHeight-8)top=r.top-mh-4;if(left+mw>innerWidth-8)left=innerWidth-mw-8;m.style.top=top+"px";m.style.left=left+"px";return m}
+function chatMenu(ev,id){const c=CHATS.find(x=>x.id===id);menuAt(ev,`<button onclick="star('${id}',${!c.starred})">${ic.star}${c.starred?"Unstar":"Star"}</button>
+ <button onclick="rename('${id}')">${ic.file}Rename</button><button onclick="delChat('${id}')" style="color:var(--bad)">${ic.trash}Delete</button>`)}
+async function star(id,v){closeMenus();await api(`/admin/chat/chats/${id}`,{method:"PATCH",body:{starred:v}});loadChats()}
+async function rename(id){closeMenus();const c=CHATS.find(x=>x.id===id);const t=prompt("Rename chat",c.title);if(t&&t.trim()){await api(`/admin/chat/chats/${id}`,{method:"PATCH",body:{title:t.trim()}});await loadChats();if(CUR&&CUR.id===id){CUR.title=t.trim();$("title").textContent=CUR.title}}}
+async function delChat(id){closeMenus();if(!confirm("Delete this chat?"))return;await api(`/admin/chat/chats/${id}`,{method:"DELETE"});if(CUR&&CUR.id===id){CUR=null;go("")}loadChats()}
+function openSearch(){setNav("search");CUR=null;$("title").textContent="Search";$("composer").style.display="none";
+ $("view").innerHTML=`<div class="page"><input id="sq" placeholder="Search your chats" style="width:100%" oninput="doSearch(this.value)"><div id="sres"></div></div>`;$("sq").focus();doSearch("")}
+async function doSearch(q){const r=await api("/admin/chat/chats?q="+encodeURIComponent(q));$("sres").innerHTML=r.length?r.map(c=>`<div class="card" style="cursor:pointer" onclick="go('chat/${c.id}')"><div class="h"><b>${esc(c.title)}</b><span class="sp"></span><span class="tag">${new Date(c.updated*1000).toLocaleDateString()}</span></div></div>`).join(""):`<div class="empty">No chats match.</div>`}
+/* ---------- chat views ---------- */
+function newChat(){CUR=null;DRAFT={links:[],files:[],skill:null,project:null,space:null};if(location.hash&&location.hash!=="#")go("");else home()}
+async function loadSide(){try{[ISK,TOOLS]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools"+(CUR?"?chat="+CUR.id:""))])}catch{}}
+function home(){setNav("");CUR=null;renderList();$("title").textContent="";
+ const hr=new Date().getHours(),g=hr<5?"Good night":hr<12?"Good morning":hr<18?"Good afternoon":"Good evening";
+ $("view").innerHTML=`<div class="hello">${DRAFT&&DRAFT.space?`<div class="muted" style="margin-bottom:6px">New chat in project <a href="#project/${esc(DRAFT.space)}">${esc(DRAFT.spaceName||"")}</a></div>`:""}<h1>${g}. How can I help?</h1><div id="slot"></div><div class="chips">
+  ${["Summarize a web page I paste","Build me a skill that converts CSV to JSON","Find and fix the failing test in my project","What can my connectors do?"].map(s=>`<button class="chip" onclick="useChip(this)">${esc(s)}</button>`).join("")}</div></div>`;
+ composer(true);loadSide()}
+function useChip(b){const t=$("ta");t.value=b.textContent;t.focus();autosize()}
+async function openChat(id,fromHash){setNav("");try{CUR=await api("/admin/chat/chats/"+id)}catch{go("");return}renderList();$("title").textContent=CUR.title;
+ DRAFT={links:[],files:[],skill:CUR.settings.skill||null,project:null,space:null};titleBar();renderMsgs();composer(false);loadSide()}
+function attChip(a){if(a.type==="link")return`<a class="att ${a.injection&&a.injection.length?"warn":""}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="${esc(a.url)}">${ic.link}<span>${esc(a.title||a.url)}</span></a>`;
+ return`<span class="att">${ic.file}<span>${esc(a.name)}</span></span>`}
+const TL={web_fetch:"Read web page",web_search:"Searched the web",read_skill:"Read skill",build_skill:"Build a new skill",create_skill:"Write a new skill",add_connector:"Add a connector",list_files:"Listed files",read_file:"Read file",search_code:"Searched the code",edit_file:"Edit file",write_file:"Write file",run_code:"Run code",opencode_task:"Hand off to OpenCode",read_app_page:"Read this app's interface",change_app_page:"Change this app's interface",computer_screenshot:"Looked at the screen",computer_list_windows:"Listed windows",computer_read_window:"Read a window",computer_open_app:"Open an app",computer_focus_window:"Switch window",computer_click:"Click",computer_click_element:"Click a control",computer_type_text:"Type text",computer_press_keys:"Press keys",computer_scroll:"Scroll"};
+function toolTitle(m){const t=m.meta.tool||"";if(TL[t])return TL[t];if(t.startsWith("skill__"))return"Ran skill "+t.slice(7);const p=t.split("__");return p.length>1?`${p[1]} · ${p[0]}`:t}
+function shotImg(n){return n?`<img class="shot" data-shot="${esc(n)}" alt="Screenshot" onclick="window.open(this.src)">`:""}
+async function loadShots(){for(const im of document.querySelectorAll("img[data-shot]:not([src])")){const n=im.dataset.shot;try{if(!SHOTS[n]){const r=await fetch("/admin/computer/shot/"+encodeURIComponent(n),{headers:{"Authorization":"Bearer "+ADM}});if(!r.ok){im.replaceWith(Object.assign(document.createElement("span"),{className:"muted",textContent:"(screenshot no longer kept)"}));continue}SHOTS[n]=URL.createObjectURL(await r.blob())}im.src=SHOTS[n]}catch{}}}
+const SHOTS={};
+function toolCard(m){const me=m.meta,st=me.status;const icon=me.kind==="build"?ic.build:me.kind==="connector"?ic.plug:me.kind==="code"?ic.code:me.kind==="computer"?ic.screen:t0(me.tool);
+ if(me.kind==="computer"){const out=String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"");
+  if(st==="pending")return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${esc(String(me.preview||"").slice(0,4000))}</pre></details>
+  <div class="ask">The assistant wants to do this on your computer, as you. Approve only if it is what you asked for.
+  <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button><button class="btn ghost small" onclick="decide(${m.id},true,true)">Allow for this chat</button><button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`;
+  return`<details class="tool" ${me.image?"open":""}><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
+  ${shotImg(me.image)}<pre>${esc(out.slice(0,12000))}</pre></details>`}
+ if((me.kind==="code"||me.tool==="change_app_page")&&me.preview!=null){const ui=me.tool==="change_app_page",oc=me.tool==="opencode_task",isDiff=me.tool!=="run_code"&&!(oc&&st==="pending");const body=isDiff?diffHtml(String(me.preview).slice(0,40000)):esc(String(me.preview).slice(0,20000));
+  if(st==="pending")return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${body}</pre></details>
+  <div class="ask">${ui?"The assistant wants to change this app's own interface. It passed the automatic checks. After you approve, reload to see it; Improve > Interface can undo it at any time.":oc?"The assistant wants to hand this task to OpenCode. OpenCode works outside the sandbox and changes files in this folder directly; you'll see every changed file afterwards.":isDiff?"The assistant wants to change this file in your project.":"The assistant wants to run this code. It runs in the sandbox without network, on a copy of your project, so your files are not changed."}
+  <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button><button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`;
+  return`<details class="tool"><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
+  <pre>${oc?esc(String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"").split("Files changed:")[0].slice(0,8000))+"Files changed:\n"+body:body+(isDiff?"":"\n\n"+esc(String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"").slice(0,12000)))}</pre></details>`}
+ const args=JSON.stringify(me.arguments||{},null,1);
+ if(st==="pending"){const canAlways=me.kind==="connector";
+  let detail=args;if(me.tool==="build_skill"&&me.arguments&&me.arguments.files){detail=Object.entries(me.arguments.files).map(([k,v])=>`── ${k}\n${v}`).join("\n\n")}
+  else if(me.tool==="create_skill")detail=(me.arguments||{}).skill_md||"";
+  return`<div class="tool pending"><details open><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span></summary><pre>${esc(detail.slice(0,20000))}</pre></details>
+  <div class="ask">${me.kind==="build"?"The assistant wants to extend itself. Review what it built; nothing takes effect until you approve.":"This tool needs your approval before it runs."}
+  <div class="row"><button class="btn small" onclick="decide(${m.id},true,false)">Approve</button>${canAlways?`<button class="btn ghost small" onclick="decide(${m.id},true,true)">Always allow this tool</button>`:""}<button class="btn ghost small" onclick="decide(${m.id},false,false)">Deny</button></div></div></div>`}
+ return`<details class="tool"><summary>${icon}<b>${esc(toolTitle(m))}</b><span class="s">${esc(me.summary||"")}</span><span class="sp" style="flex:1"></span><span class="st-${esc(st)}">${esc(st)}</span></summary>
+  <pre>${esc("arguments: "+args.slice(0,4000)+"\n\nresult:\n"+String(me.output||"").replace(/<\/?untrusted_content[^>]*>/g,"").replace(/^\[The following is external data[^\n]*\n?/m,"").slice(0,12000))}</pre></details>`}
+function t0(t){return t==="web_fetch"||t==="web_search"?ic.globe:t==="read_skill"?ic.star:ic.tool}
+function diffHtml(t){return esc(t).split("\n").map(l=>l.startsWith("+++")||l.startsWith("---")||l.startsWith("@@")?`<span class="hd">${l}</span>`:l.startsWith("+")?`<span class="ad">${l}</span>`:l.startsWith("-")?`<span class="rm">${l}</span>`:l).join("\n")}
+function renderMsgs(extra=""){const ms=CUR.messages;let h="";
+ ms.forEach((m,i)=>{
+  if(m.role==="user"){const a=m.meta.attachments||[];h+=`<div class="msg user"><div style="max-width:85%;display:flex;flex-direction:column;align-items:flex-end">${a.length?`<div class="atts">${a.map(attChip).join("")}</div>`:""}
+   ${m.meta.skill?`<div class="atts"><span class="att">${ic.star}<span>${esc(m.meta.skill)}</span></span></div>`:""}${m.content?`<div class="b">${esc(m.content)}</div>`:""}</div></div>`}
+  else if(m.role==="assistant"){const last=!ms.slice(i+1).some(x=>x.role==="assistant");const model=m.meta.model||{};
+   h+=`<div class="msg assistant"><div class="b md">${md(m.content)}</div><div class="meta"><button class="iconbtn" title="Copy" onclick="copyMsg(${m.id})">${ic.copy}</button>
+   <button class="iconbtn rate${m.meta.rating===1?" on":""}" title="Good answer" onclick="rateMsg(${m.id},1)">👍</button><button class="iconbtn rate${m.meta.rating===-1?" on":""}" title="Bad answer: tell it what to do instead" onclick="rateMsg(${m.id},-1,event)">👎</button>
+   ${last?`<button class="iconbtn" title="Retry" onclick="retry()">${ic.retry}</button>`:""}${model.provider?`<span>${esc(model.provider)}${model.seconds?" · "+model.seconds.toFixed(1)+"s":""}</span>`:""}</div></div>`}
+  else if(m.role==="tool")h+=toolCard(m);
+  else h+=`<div class="notice">${esc(m.content)}</div>`});
+ $("view").innerHTML=`<div class="col">${h}${extra}</div>`;$("view").scrollTop=1e9;loadShots()}
+async function rateMsg(id,r,ev){if(ev)ev.stopPropagation();if(!CUR)return;if(r>0){await sendRate(id,1,"","");return}
+ closeMenus();const m=document.createElement("div");m.className="menu fb";m.onclick=e=>e.stopPropagation();m.style.cssText="left:50%;top:22%;transform:translateX(-50%);width:min(560px,92vw);padding:14px 16px";
+ m.innerHTML=`<b>What should it do instead?</b><div class="sub" style="padding:4px 0">Your note becomes a lesson the assistant follows from now on. A better answer, if you write one, is also used to train the local model.</div>
+ <textarea id="fbNote" placeholder="For example: answer in bullet points and keep it under 100 words"></textarea>
+ <textarea id="fbBetter" placeholder="Optional: the answer you wanted"></textarea>
+ <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost small" onclick="closeMenus()">Cancel</button><button class="btn small" onclick="sendRate(${id},-1,$('fbNote').value,$('fbBetter').value)">Save</button></div>`;
+ document.body.appendChild(m);setTimeout(()=>$("fbNote").focus(),30)}
+async function sendRate(id,r,note,better){closeMenus();try{const o=await api(`/admin/chat/chats/${CUR.id}/rate`,{method:"POST",body:{message_id:id,rating:r,note:note||"",better:better||""}});
+ const m=CUR.messages.find(x=>x.id===id);if(m)m.meta.rating=o.rating;renderMsgs();toast(o.lesson?"Learned: "+o.lesson.text:r>0?"Thanks, noted as a good answer":"Noted")}catch(e){toast(String(e.message||e))}}
+let IMP={tab:"lessons"};
+let SPACES=[];
+async function pageProjects(){setNav("projects");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ SPACES=await api("/admin/projects");
+ $("view").innerHTML=`<div class="page"><h2>Projects</h2><p class="lead">Keep related chats together. Each project has its own instructions and knowledge files, and every chat in it uses them.</p>
+ <div style="margin-bottom:8px"><button class="btn" onclick="newSpace()">New project</button></div>
+ ${SPACES.length?SPACES.map(p=>`<div class="card" style="cursor:pointer" onclick="go('project/${esc(p.id)}')"><div class="h"><b>${esc(p.name)}</b><span class="sp"></span><span class="tag">${p.chats} chat${p.chats===1?"":"s"}</span><span class="tag">${p.files.length} file${p.files.length===1?"":"s"}</span></div>${p.description?`<div class="muted" style="margin-top:4px">${esc(p.description)}</div>`:""}</div>`).join(""):`<div class="empty">No projects yet.</div>`}</div>`}
+async function newSpace(){const n=prompt("Project name");if(!n||!n.trim())return;const d=prompt("What is it about? (optional)")||"";const p=await api("/admin/projects",{method:"POST",body:{name:n.trim(),description:d}});go("project/"+p.id)}
+async function pageProject(id){setNav("projects");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ let p;try{p=await api("/admin/projects/"+id)}catch{go("projects");return}
+ const kb=p.size>1048576?(p.size/1048576).toFixed(1)+" MB":Math.ceil(p.size/1024)+" KB";
+ $("view").innerHTML=`<div class="page"><div class="muted"><a href="#projects">Projects</a></div><h2>${esc(p.name)}</h2>${p.description?`<p class="lead">${esc(p.description)}</p>`:""}
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn" onclick="chatInSpace('${esc(p.id)}',${esc(JSON.stringify(p.name))})">New chat in this project</button><button class="btn ghost" onclick="renameSpace('${esc(p.id)}')">Rename</button><button class="btn ghost" onclick="deleteSpace('${esc(p.id)}')">Delete project</button></div>
+ <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+ <div class="card"><b>Instructions</b><div class="muted" style="margin:4px 0 8px">How the assistant should work in this project's chats.</div><textarea id="spIns" rows="8" style="width:100%">${esc(p.instructions||"")}</textarea><div style="margin-top:6px"><button class="btn small" onclick="saveSpaceIns('${esc(p.id)}')">Save instructions</button></div></div>
+ <div class="card"><div class="h"><b>Knowledge</b><span class="sp"></span><span class="tag">${p.files.length} files, ${kb}</span></div><div class="muted" style="margin:4px 0 8px">Text files the assistant reads in this project. Small sets are read in full; for large ones it gets the best matching passages.</div>
+  ${p.files.map(f=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0">${ic.file}<span style="flex:1;word-break:break-all">${esc(f.name)}</span><span class="muted">${Math.ceil(f.size/1024)} KB</span><button class="iconbtn" title="Remove" onclick="rmSpaceFile('${esc(p.id)}',${esc(JSON.stringify(f.name))})">✕</button></div>`).join("")||`<div class="empty" style="font-size:13px">No files yet</div>`}
+  <div style="margin-top:6px"><button class="btn small ghost" onclick="addSpaceFiles('${esc(p.id)}')">Add files</button></div></div></div>
+ <h3 style="margin-top:18px">Chats</h3>${p.chat_list.length?p.chat_list.map(c=>`<div class="card" style="cursor:pointer;padding:10px 14px" onclick="go('chat/${esc(c.id)}')">${esc(c.title)}</div>`).join(""):`<div class="empty">No chats in this project yet.</div>`}</div>`}
+function chatInSpace(id,name){CUR=null;DRAFT={links:[],files:[],skill:null,project:null,space:id,spaceName:name};go("");home()}
+async function saveSpaceIns(id){await api("/admin/projects/"+id,{method:"PATCH",body:{instructions:$("spIns").value}});toast("Instructions saved")}
+async function renameSpace(id){const n=prompt("New name");if(!n||!n.trim())return;await api("/admin/projects/"+id,{method:"PATCH",body:{name:n.trim()}});pageProject(id)}
+async function deleteSpace(id){if(!confirm("Delete this project and its knowledge files? Its chats are kept, outside any project."))return;await api("/admin/projects/"+id,{method:"DELETE"});go("projects")}
+async function rmSpaceFile(id,n){await api(`/admin/projects/${id}/files/${encodeURIComponent(n)}`,{method:"DELETE"});pageProject(id)}
+function addSpaceFiles(id){const i=document.createElement("input");i.type="file";i.multiple=true;i.accept=".txt,.md,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.log,.ini,.toml,.sql,.ps1,.sh,text/*";
+ i.onchange=async()=>{let n=0;for(const f of i.files){if(f.size>2000000){toast(f.name+" is larger than 2 MB");continue}try{await api(`/admin/projects/${id}/files`,{method:"POST",body:{name:f.name,content:await f.text()}});n++}catch{}}toast(`Added ${n} file${n===1?"":"s"}`);pageProject(id)};i.click()}
+async function pageImprove(tab){if(tab)IMP.tab=tab;setNav("improve");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ const L=await api("/admin/learning");let T=null;try{T=await api("/admin/learning/train")}catch{}
+ const tabs=[["lessons","Lessons"],["interface","Interface"],["training","Model training"]];
+ const nav=`<div style="display:flex;gap:6px;margin:6px 0 10px">${tabs.map(([k,n])=>`<button class="btn ${IMP.tab===k?"":"ghost"} small" onclick="pageImprove('${k}')">${n}</button>`).join("")}</div>`;
+ let body="";const st=L.stats;
+ if(IMP.tab==="lessons")body=`<p class="lead">Rate answers with 👍 or 👎. A 👎 with a note becomes a lesson like these, and the assistant follows the relevant ones in every chat. ${st.up} good and ${st.down} bad answers rated so far.</p>
+  <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" onclick="addLesson()">Add a lesson</button></div>
+  ${L.lessons.length?L.lessons.map(l=>`<div class="card"><div class="h"><b style="font-weight:500;${l.enabled?"":"opacity:.5"}">${esc(l.text)}</b><span class="sp"></span><span class="tag">used ${l.uses}×</span>
+   <button class="btn ghost small" onclick="editLesson(${l.id})">Edit</button><button class="btn ghost small" onclick="toggleLesson(${l.id},${!l.enabled})">${l.enabled?"Pause":"Use"}</button><button class="btn ghost small" onclick="delLesson(${l.id})">Delete</button></div></div>`).join(""):`<div class="empty">No lessons yet.</div>`}`;
+ else if(IMP.tab==="interface"){body=`<p class="lead">Ask in any chat for a change to this app, for example "make the sidebar narrower" or "add a button that starts a new coding chat". The assistant reads the page, proposes exact edits, and you approve the diff. Every version is kept here, and the original is always one click away.</p>`;
+  for(const [pg,h] of Object.entries(L.interface)){const path=pg==="chat.html"?"/app":"/dashboard";
+   body+=`<div class="card"><div class="h"><b>${pg==="chat.html"?"Chat":"Dashboard"}</b><span class="tag">${h.active?"version "+h.active:"original"}</span><span class="sp"></span>
+   ${h.active?`<button class="btn ghost small" onclick="uiSet('${pg}',null)">Undo last change</button><button class="btn ghost small" onclick="uiSet('${pg}',0)">Use the original</button>`:""}<a class="btn ghost small" href="${path}?safe=1">Open the original</a></div>
+   ${h.versions.slice().reverse().map(v=>`<div style="display:flex;gap:8px;align-items:center;font-size:13.5px;padding:3px 0"><span class="tag">v${v.v}</span><span>${esc(v.note||"change")}</span><span class="sub">${new Date(v.at*1000).toLocaleString()}</span><span class="sp"></span>${h.active===v.v?`<span class="tag ok">in use</span>`:`<button class="btn ghost small" onclick="uiSet('${pg}',${v.v})">Use this</button>`}</div>`).join("")||`<div class="sub">No changes yet.</div>`}</div>`}}
+ else body=trainHtml(T);
+ $("view").innerHTML=`<div class="page"><h2>Improve</h2>${nav}${body}</div>`;
+ if(IMP.tab==="training"&&T&&T.running)setTimeout(()=>{if(location.hash==="#improve"&&IMP.tab==="training")pageImprove()},5000)}
+function trainHtml(T){if(!T)return`<div class="empty">Start AI Fusion Engine Pro to train its model.</div>`;
+ const ex=`${T.examples} of ${T.min_examples} examples`;const last=(T.jobs||[]).slice().reverse();const dep=Object.entries(T.deployed||{});
+ return`<p class="lead">Training teaches the local model itself, not just its prompt: a small LoRA adapter is trained on your rated chats (answers from the local model you rated 👍 and better answers you wrote), tested on chats it didn't see, and only used if you deploy it. Answers that came from a cloud model are never used for training. Everything runs on this PC. ${esc(T.gpu_note)}</p>
+ <div class="card"><div class="kv"><b>Model</b><span>${esc(T.model||"engine not running")}</span><b>Trained from</b><span>${esc(T.base_repo||"unknown: set it below")}</span><b>Training set</b><span>${ex}</span><b>Now</b><span>${T.running?"⏳ "+esc(T.progress||T.task):esc(T.progress||"idle")}${T.error?` <span style="color:var(--bad)">${esc(T.error)}</span>`:""}</span>
+ <b>In use</b><span>${dep.length?dep.map(([m,a])=>esc(m)+" + adapter").join(", "):"plain model"}</span></div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+  <button class="btn ${T.runtime_ready?"ghost":""} small" ${T.running?"disabled":""} onclick="trainStep('runtime','Download and set up the trainer (about ${T.runtime_gb} GB: PyTorch with CUDA, transformers, peft, bitsandbytes)?')">${T.runtime_ready?"✓ Trainer ready":"1. Set up trainer (~"+T.runtime_gb+" GB)"}</button>
+  <button class="btn ${T.base_ready?"ghost":""} small" ${T.running||!T.runtime_ready?"disabled":""} onclick="trainBase()">${T.base_ready?"✓ Base weights ready":"2. Download base weights"+(T.base_gb?" (~"+T.base_gb+" GB)":"")}</button>
+  <button class="btn small" ${T.running||!T.base_ready||T.examples<T.min_examples?"disabled":""} onclick="trainStep('start','Train now? Local models pause while it runs (chats use your other provider or wait). It can take hours on this GPU.')">3. Train</button>
+  ${dep.length?`<button class="btn ghost small" onclick="trainStep('rollback','Stop using the trained adapter and go back to the plain model?')">Roll back to the plain model</button>`:""}</div></div>
+ ${last.map(j=>`<div class="card"><div class="h"><b>${esc(j.id)}</b><span class="tag ${j.better?"ok":"warn"}">${j.better?"better":"no clear gain"}</span><span class="sp"></span>${(T.deployed||{})[(j.model||"").split("/").pop()]?.path===j.path?`<span class="tag ok">in use</span>`:`<button class="btn ${j.better?"":"ghost"} small" onclick="trainDeploy('${j.id}',${j.better})">Deploy</button>`}</div>
+  <div class="kv"><b>Examples</b><span>${j.examples}</span><b>Held-out loss</b><span>${j.base_loss} → ${j.trained_loss} (lower is better)</span><b>Took</b><span>${j.minutes} min</span></div></div>`).join("")}`}
+async function trainStep(k,q){if(q&&!confirm(q))return;try{await api("/admin/learning/train/"+k,{method:"POST",body:{}});toast("Started")}catch(e){toast(String(e.message||e))}pageImprove("training")}
+async function trainBase(){const T=await api("/admin/learning/train");let repo=T.base_repo;if(!repo||!confirm(`Download ${repo} from Hugging Face`+(T.base_gb?` (about ${T.base_gb} GB)`:"")+"? It must be the original of the model the engine runs."))
+ {repo=prompt("Hugging Face repo the engine's model was made from (for example Qwen/Qwen2.5-7B-Instruct)",repo||"");if(!repo)return}
+ try{await api("/admin/learning/train/base",{method:"POST",body:{repo}});toast("Downloading")}catch(e){toast(String(e.message||e))}pageImprove("training")}
+async function trainDeploy(j,better){if(!confirm(better?"Use this adapter for the local model?":"This adapter didn't clearly improve held-out loss. Use it anyway?"))return;
+ try{await api("/admin/learning/train/deploy",{method:"POST",body:{job:j}});toast("Deployed: the model reloads with it on the next chat")}catch(e){toast(String(e.message||e))}pageImprove("training")}
+async function addLesson(){const t=prompt("A rule for the assistant to follow");if(!t)return;await api("/admin/learning/lessons",{method:"POST",body:{text:t}});pageImprove()}
+async function editLesson(id){const L=await api("/admin/learning");const l=L.lessons.find(x=>x.id===id);const t=prompt("Lesson",l?l.text:"");if(t===null)return;await api(`/admin/learning/lessons/${id}`,{method:"PATCH",body:{text:t}});pageImprove()}
+async function toggleLesson(id,on){await api(`/admin/learning/lessons/${id}`,{method:"PATCH",body:{enabled:on}});pageImprove()}
+async function delLesson(id){if(!confirm("Delete this lesson?"))return;await api(`/admin/learning/lessons/${id}`,{method:"DELETE"});pageImprove()}
+async function uiSet(pg,v){try{await api("/admin/app/ui/activate",{method:"POST",body:{page:pg,version:v}});toast("Done. Reloading…");setTimeout(()=>location.reload(),600)}catch(e){toast(String(e.message||e))}}
+function copyMsg(id){const m=CUR.messages.find(x=>x.id===id);navigator.clipboard.writeText(m.content).then(()=>toast("Copied"))}
+/* ---------- composer ---------- */
+function composer(isHome){const c=$("composer");c.style.display="";
+ const html=`<div class="box"><div id="draft" class="atts" style="justify-content:flex-start"></div>
+  <textarea id="ta" rows="1" placeholder="${isHome?"Ask anything, paste a link, or describe a skill to build…":"Reply…"}" oninput="autosize()" onkeydown="keys(event)"></textarea>
+  <div class="bar"><button class="iconbtn" data-menu title="Add" onclick="plusMenu(event)">${ic.plus}</button>
+  <button class="pill ${DRAFT.skill?"on":""}" data-menu onclick="skillMenu(event)">${ic.star.replace('<svg','<svg width="14" height="14"')} ${esc(DRAFT.skill||"Skills")}</button>
+  <button class="pill" data-menu onclick="toolsMenu(event)">${ic.plug.replace('<svg','<svg width="14" height="14"')} Tools</button>
+  <button class="pill ${projOn()?"on":""}" data-menu onclick="projectMenu(event)" title="${esc(projFolder()||"")}">${ic.code.replace('<svg','<svg width="14" height="14"')} ${esc(projLabel())}</button>
+  ${CUR&&CUR.computer&&CUR.computer.available?`<button class="pill ${CUR.computer.on?"on":""}" data-menu onclick="computerMenu(event)" title="Let the assistant use this computer in this chat">${ic.screen.replace('<svg','<svg width="14" height="14"')} Computer</button>`:""}
+  <span class="sp"></span><button class="send" id="sendb" title="Send" onclick="send()">${ic.up}</button></div></div>
+  <div class="hint">Links are read as untrusted text. Tools that pay, send or delete always ask first. Answers can be wrong; check what matters.</div>`;
+ if(isHome){c.style.display="none";$("slot").innerHTML=html.replace('class="hint"','class="hint" style="margin-top:10px"')}else c.innerHTML=html;
+ drawDraft();setTimeout(()=>$("ta")&&$("ta").focus(),30)}
+function autosize(){const t=$("ta");t.style.height="auto";t.style.height=Math.min(t.scrollHeight,260)+"px"}
+function keys(e){if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}}
+function drawDraft(){const d=$("draft");if(!d)return;d.innerHTML=DRAFT.links.map((u,i)=>`<span class="att">${ic.link}<span>${esc(u)}</span><button class="x" onclick="DRAFT.links.splice(${i},1);drawDraft()">✕</button></span>`).join("")+
+ DRAFT.files.map((f,i)=>`<span class="att">${ic.file}<span>${esc(f.name)}</span><button class="x" onclick="DRAFT.files.splice(${i},1);drawDraft()">✕</button></span>`).join("");d.style.display=d.innerHTML?"flex":"none"}
+function plusMenu(ev){menuAt(ev,`<button onclick="addLink()">${ic.link}Add a link</button><button onclick="pickFile()">${ic.file}Attach a text file</button>
+ <button onclick="closeMenus();go('connectors')">${ic.plug}Manage connectors</button><button onclick="closeMenus();go('skills')">${ic.star}Manage skills</button>`)}
+function addLink(){closeMenus();const u=prompt("Link to read (https://…)");if(!u)return;if(!/^https?:\/\//i.test(u.trim())){toast("Use an http(s) link");return}DRAFT.links.push(u.trim());drawDraft()}
+function pickFile(){closeMenus();const i=document.createElement("input");i.type="file";i.multiple=true;i.accept=".txt,.md,.csv,.json,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.log,.ini,.toml,.sql,.ps1,.sh,text/*";
+ i.onchange=async()=>{for(const f of i.files){if(f.size>400000){toast(f.name+" is larger than 400 KB");continue}DRAFT.files.push({name:f.name,content:await f.text()})}drawDraft()};i.click()}
+function skillMenu(ev){const en=ISK.filter(s=>s.enabled);menuAt(ev,`<div class="sub">Use a skill for this chat</div>${en.length?en.map(s=>`<button onclick="pickSkill('${esc(s.name)}')" title="${esc(s.description)}">${ic.star}${esc(s.title||s.name)}</button>`).join(""):`<div class="sub">No skills yet.</div>`}
+ ${DRAFT.skill?`<button onclick="pickSkill(null)">✕ Stop using ${esc(DRAFT.skill)}</button>`:""}<button onclick="closeMenus();go('skills')">${ic.plus}Add or import skills</button>`)}
+async function pickSkill(n){closeMenus();DRAFT.skill=n;if(CUR)await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{skill:n||""}});composer(!CUR)}
+function projFolder(){return CUR?(CUR.project&&CUR.project.folder)||"":DRAFT.project||""}
+function projOn(){return CUR?!!(CUR.settings&&CUR.settings.project):!!DRAFT.project}
+function projLabel(){const f=projFolder();if(!projOn())return"Code";const n=f.split(/[\\/]/).filter(Boolean).pop();return n||f}
+let OC=null,CC=null;async function ocStatus(){try{OC=await api("/admin/chat/opencode")}catch{OC={installed:false}}try{CC=await api("/admin/claude-code")}catch{CC={installed:false}}return OC}
+async function projectMenu(ev){ev.stopPropagation();const tgt=ev.currentTarget;if(!OC)await ocStatus();ev={currentTarget:tgt,stopPropagation(){}};const p=CUR&&CUR.project,ae=!!(p&&p.auto_edit),ar=!!(p&&p.auto_run),oc=!!(p&&p.opencode_commands);
+ menuAt(ev,`<div class="sub">Project folder for coding</div><div class="sub" style="font-family:Consolas,monospace;word-break:break-all">${esc(projFolder()||"(the workspace folder)")}</div>
+ ${p&&p.error?`<div class="sub" style="color:var(--bad)">${esc(p.error)}</div>`:""}
+ <button onclick="setProject()">${ic.code}Choose a folder…</button>${projOn()?`<button onclick="setProject('')">✕ Use the workspace folder</button>`:""}
+ ${CUR?`<div class="sub">Without asking each time</div><button class="chk" onclick="setAuto('auto_edit',${!ae})"><b>${ae?"✓":""}</b>Apply file edits</button><button class="chk" onclick="setAuto('auto_run',${!ar})"><b>${ar?"✓":""}</b>Run code (sandbox, no network)</button>`:""}
+ <div class="sub">OpenCode ${OC.installed?`${esc(OC.version||"")} linked`+(OC.engine_model?`, using Engine Pro (${esc(OC.engine_model)})`:", using its own model setting"):"not installed"}</div>
+ ${OC.installed?(CUR?`<button class="chk" onclick="setAuto('opencode_commands',${!oc})"><b>${oc?"✓":""}</b>Let OpenCode run commands</button>`:""):`<button onclick="closeMenus();ocHelp()">${ic.code}How to install OpenCode</button>`}
+ <div class="sub">Claude Code ${CC&&CC.installed?(CC.engine?`on Engine Pro (${esc(CC.model)}), offline`:"found; start Engine Pro to use it offline"):"not installed"}</div>
+ ${CC&&CC.installed&&CC.engine?`<button onclick="openClaudeCode()">${ic.code}Open Claude Code here (offline)</button>`:`<button onclick="closeMenus();ccHelp()">${ic.code}About Claude Code offline</button>`}`)}
+function computerMenu(ev){const c=CUR.computer;menuAt(ev,`<div class="sub">Use my computer in this chat</div>
+ <button class="chk" onclick="setComputer('computer',${!c.on})"><b>${c.on?"✓":""}</b>Let the assistant see and use this PC</button>
+ ${c.on?`<button class="chk" onclick="setComputer('computer_auto',${!c.auto})"><b>${c.auto?"✓":""}</b>Act without asking each time</button>`:""}
+ <div class="sub" style="max-width:300px;white-space:normal">It can take screenshots, read windows, open apps, click, type and press keys, as you. Looking is allowed; each action asks you first unless you tick the second option. The emergency stop blocks it at once.</div>`)}
+async function setComputer(k,on){closeMenus();if(on&&k==="computer_auto"&&!confirm("Let the assistant click, type and open apps on this PC without asking, for this chat? You can turn it off here at any time."))return;
+ await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{[k]:on}});await refresh();composer(false);toast(k==="computer"?(on?"The assistant can use this computer in this chat":"Computer use is off"):(on?"Acting without asking":"Asking before each action"))}
+async function openClaudeCode(){closeMenus();toast("Opening Claude Code on your local model…");try{const r=await api("/admin/claude-code/launch",{method:"POST",body:{chat:CUR?CUR.id:null}});
+ if(r.launched)toast("Claude Code opened in "+r.folder+(r.warning?" ("+r.warning+")":""));else renderInfo("Start Claude Code","Run this in PowerShell in "+r.folder+":\n\n"+r.manual)}catch(e){toast(String(e.message||e))}}
+function ccHelp(){renderInfo("Claude Code with AI Fusion, offline","Claude Code can run on your own Engine Pro model with no internet. Your plugins, skills, hooks and local MCP servers keep working because only the model changes. Your normal Claude Code (with your Anthropic account) is not changed.\n\nConnectors you added on claude.ai belong to your Anthropic account, so they need the internet and are not available offline.\n\n1. Install Claude Code once: irm https://claude.ai/install.ps1 | iex\n2. Start AI Fusion Engine Pro (tray > Open AI Fusion Engine).\n3. Code menu > Open Claude Code here (offline).\n\nThe local model is loaded with a 32k-token context. A 7B model is much less capable than Claude models: keep tasks small and specific."+(CC&&CC.manual?"\n\nTo start it yourself (for example in VS Code's terminal):\n"+CC.manual:""))}
+function ocHelp(){renderInfo("Link OpenCode","OpenCode is the open source coding agent (opencode.ai, MIT licence). Install it once, then restart AI Fusion OS Pro; the chat can then hand coding tasks to it, and it uses your Engine Pro model when the engine is running.\n\nIn PowerShell: npm install -g opencode-ai\n\nOr download it from github.com/sst/opencode/releases and set FUSION_OS_OPENCODE in desktop.env to the path of opencode.exe.")}
+function openArtifact(btn){const code=btn.closest("pre").querySelector("code").textContent;let a=$("art");
+ if(!a){a=document.createElement("aside");a.id="art";document.body.appendChild(a)}
+ const isSvg=/^\s*<svg/i.test(code);
+ const guard='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; font-src data:">';
+ const doc=isSvg?`<!doctype html><html><head>${guard}</head><body style="margin:0;display:grid;place-items:center;min-height:100vh">${code}<\/body><\/html>`:guard+code;
+ a.innerHTML=`<div class="ah"><b>Preview</b><span class="muted">runs sandboxed, with no network or access to the app</span><span class="sp" style="flex:1"></span><button class="btn small ghost" onclick="dlArtifact()">Download</button><button class="iconbtn" title="Close" onclick="$('art').remove();document.body.classList.remove('arton')">✕</button></div><iframe sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>`;
+ a.querySelector("iframe").srcdoc=doc;a.dataset.code=code;a.dataset.ext=isSvg?"svg":"html";document.body.classList.add("arton")}
+function dlArtifact(){const a=$("art");const b=new Blob([a.dataset.code],{type:a.dataset.ext==="svg"?"image/svg+xml":"text/html"});const l=document.createElement("a");l.href=URL.createObjectURL(b);l.download="artifact."+a.dataset.ext;l.click();setTimeout(()=>URL.revokeObjectURL(l.href),2000)}
+function renderInfo(t,b){closeMenus();const m=document.createElement("div");m.className="menu";m.style.cssText="left:50%;top:30%;transform:translateX(-50%);max-width:520px;padding:16px 18px;white-space:pre-wrap;font-size:14px";
+ m.innerHTML=`<b style="font-size:15px">${esc(t)}</b>\n\n${esc(b)}\n\n<button class="btn small" onclick="closeMenus()">OK</button>`;document.body.appendChild(m)}
+async function setProject(v){closeMenus();if(v===undefined){v=prompt("Folder with your code (full path, for example C:\\Users\\you\\projects\\app)",projFolder());if(v===null)return;v=v.trim()}
+ if(!CUR){DRAFT.project=v||null;composer(true);return}
+ try{await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{project:v}});await refresh();composer(false);loadSide();toast(v?"Project folder set":"Using the workspace folder")}catch(e){toast(String(e.message||e))}}
+async function setAuto(k,on){closeMenus();if(on&&!confirm(k==="opencode_commands"?"Let OpenCode run commands in this project for this chat? Commands run on your PC outside the sandbox, with your user's access. You still approve each hand-off.":k==="auto_edit"?"Let the assistant change files in this project without asking, for this chat? You can turn it off here at any time.":"Let the assistant run code without asking, for this chat? Code runs in the sandbox without network, on a copy of the project."))return;
+ await api(`/admin/chat/chats/${CUR.id}`,{method:"PATCH",body:{[k]:on}});await refresh();composer(false);loadSide()}
+function toolsMenu(ev){const by={};TOOLS.forEach(t=>{const g=t.kind==="connector"?t.description.match(/^\[([^\]]+)\]/)?.[1]||"Connector":t.kind==="skill"?"Sandboxed skills":t.kind==="build"?"Self-build":t.kind==="code"?"Coding":"Built in";(by[g]=by[g]||[]).push(t)});
+ menuAt(ev,`<div style="max-height:360px;overflow:auto">${Object.entries(by).map(([g,ts])=>`<div class="sub">${esc(g)}</div>`+ts.map(t=>`<div style="padding:4px 10px;font-size:13px;display:flex;gap:8px"><span class="n" style="font-family:Consolas,monospace">${esc(t.tool||t.id)}</span><span class="sp" style="flex:1"></span><span class="tag ${t.permission==="ask"?"warn":"ok"}">${t.permission==="ask"?"asks":"allowed"}</span></div>`).join("")).join("")}</div><button onclick="closeMenus();go('connectors')">${ic.plug}Add connectors</button>`)}
+async function send(){if(BUSY)return;const t=$("ta");const text=t.value.trim();if(!text&&!DRAFT.links.length&&!DRAFT.files.length)return;
+ BUSY=true;$("sendb").disabled=true;
+ try{if(!CUR){const c=await api("/admin/chat/chats",{method:"POST",body:DRAFT.space?{space:DRAFT.space}:{}});CUR={...c,messages:[]};history.replaceState(null,"","#chat/"+c.id);$("title").textContent="New chat";
+   if(DRAFT.project){try{await api(`/admin/chat/chats/${c.id}`,{method:"PATCH",body:{project:DRAFT.project}});CUR={...(await api("/admin/chat/chats/"+c.id)),messages:[]}}catch(e){toast(String(e.message||e))}}composer(false)}
+  const body={text,links:DRAFT.links,files:DRAFT.files,skill:DRAFT.skill};
+  CUR.messages.push({id:-1,role:"user",content:text,meta:{attachments:DRAFT.links.map(u=>({type:"link",url:u,title:u})).concat(DRAFT.files.map(f=>({type:"file",name:f.name}))),skill:DRAFT.skill}});
+  DRAFT.links=[];DRAFT.files=[];$("ta").value="";drawDraft();autosize();thinking();
+  const r=await api(`/admin/chat/chats/${CUR.id}/send`,{method:"POST",body});await refresh()}
+ catch(e){await refresh().catch(()=>{})}finally{BUSY=false;if($("sendb"))$("sendb").disabled=false;loadChats()}}
+function thinking(){renderMsgs(`<div class="msg assistant"><div class="typing"><i></i><i></i><i></i></div></div>`)}
+async function refresh(){if(!CUR)return;CUR=await api("/admin/chat/chats/"+CUR.id);titleBar();renderMsgs()}
+function titleBar(){const t=$("title");if(!CUR){t.textContent="";return}t.innerHTML=(CUR.space?`<a href="#project/${esc(CUR.space.id)}" style="color:var(--mute);text-decoration:none">${esc(CUR.space.name)}</a> <span style="color:var(--mute)">/</span> `:"")+esc(CUR.title)}
+async function decide(mid,approve,always){if(BUSY)return;BUSY=true;thinking();try{await api(`/admin/chat/chats/${CUR.id}/approve`,{method:"POST",body:{message_id:mid,approve,always}})}catch{}finally{BUSY=false;await refresh();loadSide();status()}}
+async function retry(){if(BUSY)return;BUSY=true;const i=CUR.messages.map(m=>m.role).lastIndexOf("user");CUR.messages=CUR.messages.slice(0,i+1);thinking();
+ try{await api(`/admin/chat/chats/${CUR.id}/retry`,{method:"POST"})}catch{}finally{BUSY=false;refresh()}}
+/* ---------- skills page ---------- */
+let SKTAB="instructions";
+let SYNC=null;
+function syncBar(){const s=SYNC;if(!s)return"";const when=s.last_run?new Date(s.last_run*1000).toLocaleTimeString():"not yet";
+ return `<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" ${s.enabled?"checked":""} onchange="syncSet(this.checked)"> <b>Keep in step with Claude</b></label>
+ <span class="muted">${s.enabled?`${s.connectors} connector(s) and ${s.skills} skill(s) synced from your Claude desktop app and Claude Code${s.plugins.length?`, including ${s.plugins.length} plugin(s)`:""}. New ones appear within a minute. Last check ${esc(when)}.`:"Off: changes in Claude are not picked up."}</span><span class="sp"></span>
+ <button class="btn ghost" onclick="syncNow()">Check now</button>${s.errors.length?`<span class="tag warn" title="${esc(s.errors.join("\n"))}">${s.errors.length} problem(s)</span>`:""}</div>`}
+async function syncRefresh(){try{SYNC=await api("/admin/claude-sync")}catch(e){SYNC=null}}
+async function syncSet(on){SYNC=await api("/admin/claude-sync",{method:"POST",body:{enabled:on}});toast(on?"Syncing from Claude":"Sync from Claude is off");reloadSyncPage()}
+async function syncNow(){SYNC=await api("/admin/claude-sync/run",{method:"POST"});toast(SYNC.last_changes.length?SYNC.last_changes[0]:"Up to date");reloadSyncPage()}
+function reloadSyncPage(){document.querySelector(".navbtn.on")?.dataset.nav==="skills"?pageSkills():pageConnectors()}
+async function pageSkills(){setNav("skills");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ const [isk,tools]=await Promise.all([api("/admin/iskills"),api("/admin/chat/tools"),syncRefresh()]);ISK=isk;TOOLS=tools;
+ const sb=tools.filter(t=>t.kind==="skill");
+ let body="";
+ if(SKTAB==="instructions"){body=syncBar()+`<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="btn" onclick="uploadSkill()">Upload skill (.zip or SKILL.md)</button><button class="btn ghost" onclick="writeSkill()">Write a skill</button><button class="btn ghost" onclick="importSkills()">Import from Claude</button></div>`+
+  (isk.length?isk.map(s=>`<div class="card"><div class="h"><b>${esc(s.title||s.name)}</b>${s.source?`<span class="tag">${esc(s.source)}</span>`:""}${s.warnings.length?`<span class="tag warn" title="${esc(s.warnings.join("\n"))}">${s.warnings.length} warning(s)</span>`:""}<span class="sp"></span>
+   <button class="btn ghost small" onclick="viewSkill('${esc(s.name)}')">View</button><button class="iconbtn" title="Remove" onclick="rmSkill('${esc(s.name)}')">${ic.trash}</button>
+   <div class="switch ${s.enabled?"on":""}" role="switch" tabindex="0" onclick="enSkill('${esc(s.name)}',${!s.enabled})"></div></div><div class="d">${esc(s.description)}</div>
+   ${s.files.length>1?`<div class="d">${s.files.length} files</div>`:""}</div>`).join(""):`<div class="empty">No instruction skills yet. Upload one, import yours from Claude, or ask the assistant to write one.</div>`)}
+ else body=`<p class="lead">Runnable skills are Python programs that pass automatic checks and tests, are approved by you, and always run in the sandbox. Ask the assistant to build one in a chat, or submit them from Mission Control.</p>`+
+  (sb.length?sb.map(t=>`<div class="card"><div class="h"><b>${esc(t.skill)}</b><span class="tag ok">active</span></div><div class="d">${esc(t.description.replace(/^Sandboxed skill: /,""))}</div></div>`).join(""):`<div class="empty">No runnable skills yet.</div>`);
+ $("view").innerHTML=`<div class="page"><h2>Skills</h2><p class="lead">Skills teach the assistant how to do specific kinds of work. They use the same SKILL.md format as Claude's skills.</p>
+  <div class="tabs"><button class="${SKTAB==="instructions"?"on":""}" onclick="SKTAB='instructions';pageSkills()">Instruction skills</button><button class="${SKTAB==="runnable"?"on":""}" onclick="SKTAB='runnable';pageSkills()">Runnable skills</button></div>${body}</div>`}
+async function enSkill(n,v){await api(`/admin/iskills/${n}/enabled`,{method:"PUT",body:{enabled:v}});pageSkills()}
+async function rmSkill(n){if(!confirm(`Remove the skill ${n}?`))return;await api(`/admin/iskills/${n}`,{method:"DELETE"});pageSkills()}
+async function viewSkill(n){const s=await api(`/admin/iskills/${n}`);modal(`<h3 style="margin-top:0">${esc(n)}</h3><div class="md">${md(s.content)}</div><div style="text-align:right;margin-top:14px"><button class="btn" onclick="closeModal()">Close</button></div>`)}
+function modal(h){closeModal();const m=document.createElement("div");m.className="modal";m.id="modal";m.innerHTML=`<div class="in">${h}</div>`;m.onclick=e=>{if(e.target===m)closeModal()};document.body.appendChild(m)}
+function closeModal(){const m=$("modal");if(m)m.remove()}
+function uploadSkill(){const i=document.createElement("input");i.type="file";i.accept=".zip,.md,.skill";i.onchange=async()=>{const f=i.files[0];if(!f)return;let body;
+ if(/\.md$/i.test(f.name))body={skill_md:await f.text()};else{const b=new Uint8Array(await f.arrayBuffer());let s="";for(let k=0;k<b.length;k+=32768)s+=String.fromCharCode.apply(null,b.subarray(k,k+32768));body={zip_b64:btoa(s)}}
+ try{const r=await api("/admin/iskills",{method:"POST",body});toast(`Added ${r.name}`+(r.warnings.length?` (${r.warnings.length} warning(s))`:""));pageSkills()}catch{}};i.click()}
+function writeSkill(){modal(`<h3 style="margin-top:0">Write a skill</h3><div class="stack"><textarea id="skmd" rows="14" style="font-family:Consolas,monospace;font-size:13px">---
+name: my-skill
+description: When to use this skill, in one sentence.
+---
+
+# Instructions
+
+Steps the assistant should follow…</textarea><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveSkill()">Save</button></div></div>`)}
+async function saveSkill(){try{await api("/admin/iskills",{method:"POST",body:{skill_md:$("skmd").value}});closeModal();pageSkills()}catch{}}
+async function importSkills(){const r=await api("/admin/iskills/import/claude");
+ modal(`<h3 style="margin-top:0">Import skills from Claude</h3><p style="color:var(--mute)">Skills found in your Claude skills folder (<code>~/.claude/skills</code>). They are copied; the originals are not changed.</p>
+ ${r.length?r.map(s=>`<label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" value="${esc(s.folder)}" ${s.already_added?"disabled":"checked"}><span><b>${esc(s.name)}</b>${s.already_added?' <span class="tag">already added</span>':""}<br><span class="d">${esc(s.description)}</span></span></label>`).join(""):`<div class="empty">No Claude skills found on this PC.</div>`}
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost" onclick="closeModal()">Close</button>${r.length?`<button class="btn" onclick="doImportSkills()">Import selected</button>`:""}</div>`)}
+async function doImportSkills(){const names=[...document.querySelectorAll("#modal input:checked")].map(x=>x.value);const r=await api("/admin/iskills/import/claude",{method:"POST",body:{names}});
+ toast(`Imported ${r.added.length}`+(r.errors.length?`; ${r.errors.length} failed: ${r.errors[0]}`:""));closeModal();pageSkills()}
+/* ---------- connectors page ---------- */
+async function pageConnectors(){setNav("connectors");CUR=null;renderList();$("title").textContent="";$("composer").style.display="none";
+ const [cs]=await Promise.all([api("/admin/connectors"),syncRefresh()]);
+ $("view").innerHTML=`<div class="page"><h2>Connectors</h2><p class="lead">Connect MCP servers to give the assistant tools for your apps and data, the same kind of connectors Claude uses. Every tool asks before it runs unless you allow it; tools that can pay, send or delete always ask.</p>
+ ${syncBar()}
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn" onclick="addConn()">Add connector</button><button class="btn ghost" onclick="importConns()">Import from Claude</button></div>
+ ${cs.length?cs.map(connCard).join(""):`<div class="empty">No connectors yet. Add a remote MCP server URL, a local MCP program, or import the ones you set up in Claude.</div>`}</div>`}
+function connCard(c){const ok=!c.last_error&&c.tools.length;
+ return`<div class="card"><div class="h">${ic.plug.replace('<svg','<svg width="20" height="20"')}<b>${esc(c.name)}</b><span class="tag">${c.type==="http"?"remote":"local program"}</span>
+ ${c.last_error?`<span class="tag bad" title="${esc(c.last_error)}">error</span>`:ok?`<span class="tag ok">${c.tools.length} tools</span>`:`<span class="tag">not connected</span>`}<span class="sp"></span>
+ <button class="btn ghost small" onclick="refreshConn('${c.id}')">Reconnect</button><button class="iconbtn" title="Remove" onclick="rmConn('${c.id}')">${ic.trash}</button>
+ <div class="switch ${c.enabled?"on":""}" role="switch" tabindex="0" onclick="enConn('${c.id}',${!c.enabled})"></div></div>
+ <div class="d">${esc(c.type==="http"?c.url:[c.command,...(c.args||[])].join(" "))}${c.source&&c.source!=="manual"?` · ${esc(c.source)}`:""}</div>
+ ${c.last_error?`<div class="d" style="color:var(--bad)">${esc(c.last_error)}</div>`:""}
+ ${c.tools.length?`<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mute);font-size:13.5px">Tool permissions</summary><div style="margin-top:6px">${c.tools.map(t=>`<div class="toolrow"><span class="n">${esc(t.name)}</span><span class="dd" title="${esc(t.description)}">${esc(t.description)}</span>
+  <div class="seg">${["ask","allow","off"].map(p=>`<button class="${t.permission===p?"on":""}" ${p==="allow"&&t.risky?'disabled title="This tool can pay, send, publish or delete, so it always asks"':""} onclick="perm('${c.id}','${esc(t.name)}','${p}')">${p==="ask"?"Ask":p==="allow"?"Allow":"Off"}</button>`).join("")}</div></div>`).join("")}</div></details>`:""}</div>`}
+async function perm(id,t,p){await api(`/admin/connectors/${id}/tools/${encodeURIComponent(t)}`,{method:"PUT",body:{permission:p}});pageConnectors()}
+async function enConn(id,v){await api(`/admin/connectors/${id}/enabled`,{method:"PUT",body:{enabled:v}});pageConnectors()}
+async function refreshConn(id){toast("Connecting…");const c=await api(`/admin/connectors/${id}/refresh`,{method:"POST"});toast(c.last_error?"Could not connect":"Connected: "+c.tools.length+" tools");pageConnectors()}
+async function rmConn(id){if(!confirm("Remove this connector?"))return;await api(`/admin/connectors/${id}`,{method:"DELETE"});pageConnectors()}
+function addConn(){modal(`<h3 style="margin-top:0">Add connector</h3><div class="tabs"><button id="t1" class="on" onclick="ctab(1)">Remote (URL)</button><button id="t2" onclick="ctab(2)">Local program</button></div>
+ <div id="f1" class="stack"><label>Name<input id="cn1" placeholder="e.g. GitHub"></label><label>MCP server URL<input id="cu" placeholder="https://example.com/mcp"></label>
+ <label>Access token (optional)<input id="ct" type="password" placeholder="Sent as a Bearer token"></label><p class="d" style="margin:0;color:var(--mute);font-size:13px">Remote servers must use https. Servers that need an OAuth sign-in in a browser are not supported yet; use a token.</p></div>
+ <div id="f2" class="stack" style="display:none"><label>Name<input id="cn2" placeholder="e.g. Filesystem"></label><label>Command<input id="cc" placeholder="npx"></label><label>Arguments (one per line)<textarea id="ca" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\\Users\\me\\Documents"></textarea></label>
+ <label>Environment (KEY=value, one per line)<textarea id="ce" rows="2"></textarea></label><p style="margin:0;color:var(--warn);font-size:13px">A local connector runs a program on this PC outside the sandbox, with the access you give it. Only add programs you trust.</p></div>
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" id="cadd" onclick="saveConn()">Add and connect</button></div>`)}
+let CT=1;function ctab(n){CT=n;$("t1").classList.toggle("on",n===1);$("t2").classList.toggle("on",n===2);$("f1").style.display=n===1?"":"none";$("f2").style.display=n===2?"":"none"}
+async function saveConn(){const b=CT===1?{name:$("cn1").value||"Connector",type:"http",url:$("cu").value.trim(),token:$("ct").value}:
+ {name:$("cn2").value||"Connector",type:"stdio",command:$("cc").value.trim(),args:$("ca").value.split("\n").map(s=>s.trim()).filter(Boolean),
+  env:Object.fromEntries($("ce").value.split("\n").map(s=>s.trim()).filter(s=>s.includes("=")).map(s=>[s.slice(0,s.indexOf("=")).trim(),s.slice(s.indexOf("=")+1)]))};
+ $("cadd").disabled=true;try{const c=await api("/admin/connectors",{method:"POST",body:b});closeModal();toast(c.last_error?"Added, but could not connect: "+c.last_error:"Connected: "+c.tools.length+" tools");pageConnectors()}catch{$("cadd").disabled=false}}
+async function importConns(){const r=await api("/admin/connectors/import/claude");
+ modal(`<h3 style="margin-top:0">Import connectors from Claude</h3><p style="color:var(--mute)">MCP servers set up for the Claude desktop app and Claude Code on this PC. Their settings are copied; Claude's files are not changed.
+ Connectors you added on claude.ai sign in through Claude's own account and can't be copied; add them here with their URL and a token where the service offers one.</p>
+ ${r.length?r.map(s=>`<label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" value="${esc(s.name)}" ${s.already_added||!s.supported?"disabled":"checked"}>
+ <span><b>${esc(s.name)}</b> <span class="tag">${s.type==="http"?"remote":"local program"}</span>${s.already_added?' <span class="tag">already added</span>':""}<br><span class="d">${esc(s.type==="http"?s.url:[s.command,...s.args].join(" "))}</span>
+ ${s.env_keys.length?`<br><span class="d">environment: ${esc(s.env_keys.join(", "))}</span>`:""}${s.note?`<br><span class="d" style="color:var(--warn)">${esc(s.note)}</span>`:""}</span></label>`).join(""):`<div class="empty">No Claude MCP configuration found on this PC.</div>`}
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn ghost" onclick="closeModal()">Close</button>${r.length?`<button class="btn" id="impb" onclick="doImportConns()">Import selected</button>`:""}</div>`)}
+async function doImportConns(){$("impb").disabled=true;const names=[...document.querySelectorAll("#modal input:checked")].map(x=>x.value);
+ const r=await api("/admin/connectors/import/claude",{method:"POST",body:{names}});toast(`Imported ${r.added.length}`+(r.errors.length?`; ${r.errors.length} failed`:""));closeModal();pageConnectors()}
+/* ---------- boot ---------- */
+desktopLaunch().then(ok=>{if(ok)return;if(ADM)api("/admin/status").then(start).catch(()=>{});else showLogin()});
+</script></body></html>

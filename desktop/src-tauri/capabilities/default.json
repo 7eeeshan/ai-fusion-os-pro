@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The bundled start-up page needs no commands. The dashboard is served by the local backend and gets no Tauri IPC.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

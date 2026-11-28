@@ -34,7 +34,7 @@ from ..ops import BackupManager, HealthMonitor, ImprovementLab
 from ..cloud import JobQueue, Worker
 from ..cloud.llm_bridge import QueueLLM
 from ..skills import SkillManager
-from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable
+from ..sandbox import DockerSandbox, SandboxSpec, SandboxUnavailable, make_sandbox
 from ..sandbox.docker import SandboxError
 from ..security.controller import SecurityController
 from ..security.engagements import Engagement
@@ -212,6 +212,10 @@ class ScheduleBody(BaseModel):
     requires: list[str] = Field(default_factory=list)
 
 
+class LaunchBody(BaseModel):
+    launch: str
+
+
 class ScanBody(BaseModel):
     text: str
     source: str = "unknown"
@@ -222,9 +226,9 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
                engine: Optional[EngineLink] = None, memory: Optional[MemoryStore] = None,
                skills: Optional[SkillManager] = None, missions: Optional[MissionRunner] = None,
                secops: Optional[SecOpsService] = None, web: Optional[SurfaceWeb] = None,
-               tor: Optional[TorResearch] = None) -> FastAPI:
+               tor: Optional[TorResearch] = None, desktop: Any = None) -> FastAPI:
     ctl = controller or SecurityController()
-    sbx = sandbox or DockerSandbox()
+    sbx = sandbox or make_sandbox(generic=True)
     eng = engine or EngineLink()
     mem = memory or MemoryStore(paths.home() / "memory.db")
     skm = skills or SkillManager(ctl, paths.home() / "skills")
@@ -286,13 +290,34 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         return a
 
     @app.get("/dashboard", include_in_schema=False)
-    def dashboard():
+    def dashboard(safe: int = 0):
         from fastapi.responses import HTMLResponse
         from importlib import resources as _r
-        html = _r.files("fusion_os.api").joinpath("dashboard.html").read_text(encoding="utf-8")
+        overlay = getattr(app.state, "overlay", None)
+        html = overlay.serve("dashboard.html", safe=bool(safe)) if overlay is not None else \
+            _r.files("fusion_os.api").joinpath("dashboard.html").read_text(encoding="utf-8")
         return HTMLResponse(html, headers={"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; "
                                            "style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
                                            "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer"})
+
+    if desktop is not None:
+        # Desktop app only: the shell proves it can read this Windows user's private data folder by presenting the
+        # per-start launch secret, and gets a dashboard session without anyone pasting the admin token.
+        @app.post("/desktop/session", include_in_schema=False)
+        def desktop_session(body: LaunchBody):
+            if not desktop.check(body.launch):
+                ctl.audit.append("desktop", "desktop.session_denied", {})
+                raise HTTPException(403, "invalid launch secret")
+            ctl.audit.append("desktop", "desktop.session", {})
+            return {"admin_token": ctl.admin_token()}
+
+        @app.post("/desktop/shutdown", include_in_schema=False)
+        def desktop_shutdown(body: LaunchBody):
+            if not desktop.check(body.launch):
+                raise HTTPException(403, "invalid launch secret")
+            ctl.audit.append("desktop", "desktop.shutdown", {})
+            desktop.request_stop()
+            return {"ok": True}
 
     @app.get("/health")
     def health():
@@ -435,7 +460,7 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         except SandboxUnavailable as exc:
             raise HTTPException(503, str(exc))
 
-    health = HealthMonitor(ctl, memory=mem, missions=mis, sandbox=sbx, engine=eng, data_dir=paths.home())
+    health = HealthMonitor(ctl, memory=mem, missions=mis, sandbox=skm.sandbox, engine=eng, data_dir=paths.home())
     backups = BackupManager(paths.home(), ctl)
     lab = ImprovementLab(ctl, cfg, paths.home() / "proposals.db", _evaluate, post_check=lambda: health.check()["ok"])
     mis.cfg = cfg
@@ -779,7 +804,11 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
 
     @app.get("/admin/status", dependencies=[Depends(admin)])
     def status():
-        return {**ctl.status(), "sandbox": dict(zip(("available", "detail"), sbx.available())),
+        sk = skm.sandbox
+        return {**ctl.status(),
+                "sandbox": {**dict(zip(("available", "detail"), sbx.available())),
+                            "skills": {**dict(zip(("available", "detail"), sk.available())),
+                                       "isolation": getattr(sk, "isolation", "docker")}},
                 "engine_link": eng.status()}
 
     @app.get("/admin/approvals", dependencies=[Depends(admin)])
@@ -863,5 +892,13 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
     @app.get("/admin/engine", dependencies=[Depends(admin)])
     def engine_status():
         return eng.status()
+
+    from .chat_routes import mount as mount_chat
+    app.state.chat_parts = mount_chat(app, admin, ctl, router, skills=skm, web=wb, engine=eng)
+
+    @app.get("/", include_in_schema=False)
+    def root():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/app")
 
     return app

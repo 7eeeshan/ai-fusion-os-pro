@@ -213,7 +213,7 @@ def test_untouched_old_default_policy_is_upgraded(tmp_path):
     (d / "policy.json").write_text(text)
     (d / "policy.lock").write_text(sha256_text(text))
     ctl = SecurityController(d)
-    assert ctl.policy.doc.version == 2
+    assert ctl.policy.doc.version == _j.loads(default_policy_text())["version"]
     edited = _j.dumps({**v1, "description": "admin edit"})
     (d / "policy.json").write_text(edited)
     (d / "policy.lock").write_text(sha256_text(edited))

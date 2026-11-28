@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 6,
   "description": "Default AI Fusion OS Pro policy. Rules are checked top to bottom; first match wins; no match = deny. The immutable rules in policy.py run before these and cannot be overridden here.",
   "approval_ttl_seconds": 86400,
   "rules": [
@@ -130,6 +130,75 @@
       "effect": "require_approval"
     },
     {
+      "id": "connector-preapproved",
+      "actions": [
+        "connector.call.preapproved"
+      ],
+      "zones": [
+        "standard",
+        "research"
+      ],
+      "effect": "allow",
+      "description": "connector tools the person set to Allow in the chat (never tools that pay, send or delete)"
+    },
+    {
+      "id": "connector-ask",
+      "actions": [
+        "connector.call"
+      ],
+      "zones": [
+        "standard",
+        "research"
+      ],
+      "effect": "require_approval"
+    },
+    {
+      "id": "chat-auto-approve",
+      "description": "File edits and code runs in a chat where the person turned on auto-approve for that chat's project folder.",
+      "actions": [
+        "files.write.preapproved",
+        "code.run.preapproved"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "allow"
+    },
+    {
+      "id": "code-run",
+      "description": "Running model-written code from the chat on a copy of the project folder (sandbox, no network), and handing a coding task to OpenCode in the project folder: the person approves each one.",
+      "actions": [
+        "code.run",
+        "code.delegate"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "require_approval"
+    },
+    {
+      "id": "computer-use",
+      "description": "Using the person's own computer from the chat (screenshots, reading windows, mouse and keyboard). Only in a chat where the person turned on 'Use my computer'. Looking needs no approval there; every click, key or opened app is approved, unless the person turned on 'without asking' for that chat.",
+      "actions": [
+        "computer.observe",
+        "computer.control.preapproved"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "allow"
+    },
+    {
+      "id": "computer-control",
+      "actions": [
+        "computer.control"
+      ],
+      "zones": [
+        "standard"
+      ],
+      "effect": "require_approval"
+    },
+    {
       "id": "privileged",
       "actions": [
         "skill.register",
@@ -137,7 +206,11 @@
         "system.update",
         "agent.spawn",
         "credential.read",
-        "files.write"
+        "files.write",
+        "connector.add",
+        "app.ui.change",
+        "model.train",
+        "model.adapter.deploy"
       ],
       "zones": [
         "standard",

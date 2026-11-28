@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "resources": {
+      "../../build/backend/": "backend/",
+      "../../build/tor/": "tor/",
+      "../../build/engine/": "engine/"
+    },
+    "longDescription": "AI Fusion OS Pro with AI Fusion Engine Pro: missions, agents, skills, research and security operations, governed by approvals, policies and an audit log, with a local model engine. Runs without Docker."
+  }
+}

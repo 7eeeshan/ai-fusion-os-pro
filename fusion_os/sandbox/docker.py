@@ -42,6 +42,8 @@ class SandboxSpec:
     workdir_writable: bool = False
     env: dict[str, str] = field(default_factory=dict)
     stdin: Optional[str] = None
+    # Process sandbox only: the one host:port the child may connect to (the local Tor SOCKS port). Docker ignores it.
+    allow_connect: Optional[tuple[str, int]] = None
 
 
 @dataclass
@@ -59,6 +61,8 @@ class SandboxResult:
 
 
 class DockerSandbox:
+    isolation = "docker"
+
     def __init__(self, allowed_images: tuple[str, ...] | list[str] = DEFAULT_IMAGES, docker_bin: Optional[str] = None,
                  workroot: Optional[Path] = None, max_output: int = 1_000_000):
         self.allowed_images = tuple(allowed_images)
@@ -70,13 +74,17 @@ class DockerSandbox:
         if not self.docker:
             return False, "docker CLI not found"
         try:
-            r = subprocess.run([self.docker, "info", "--format", "{{.ServerVersion}}"], capture_output=True,
+            r = subprocess.run([self.docker, "info", "--format", "{{.ServerVersion}} {{.OSType}}"], capture_output=True,
                                text=True, timeout=15)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return False, f"docker not reachable: {exc}"
         if r.returncode != 0:
             return False, (r.stderr or r.stdout).strip()[:300] or "docker daemon not running"
-        return True, r.stdout.strip()
+        version, _, os_type = r.stdout.strip().partition(" ")
+        if os_type and os_type != "linux":
+            # The sandbox images are Linux images, and --read-only etc. do not exist for Windows containers.
+            return False, f"docker is in {os_type} containers mode; switch Docker Desktop to Linux containers"
+        return True, version
 
     def build_argv(self, spec: SandboxSpec, name: str) -> list[str]:
         if spec.image not in self.allowed_images:

@@ -27,7 +27,7 @@ class HealthMonitor:
         c["emergency_stop"] = {"ok": not self.ctl.stopped, "detail": "active" if self.ctl.stopped else "off"}
         if self.sandbox is not None:
             ok, d = self.sandbox.available()
-            c["sandbox"] = {"ok": ok, "detail": d}
+            c["sandbox"] = {"ok": ok, "detail": d, "isolation": getattr(self.sandbox, "isolation", "docker")}
         if self.engine is not None:
             st = self.engine.status()
             c["engine_link"] = {"ok": st["connected"], "detail": st.get("error") or st.get("url"), "optional": True}
@@ -53,7 +53,8 @@ class HealthMonitor:
         if "audit_chain" in fails:
             advice.append("Audit chain is broken: treat as a security incident, keep the database for forensics, restore a backup.")
         if "sandbox" in fails:
-            advice.append("Sandbox unavailable: start Docker Desktop. Tool, skill and research runs refuse until then.")
+            advice.append("Sandbox unavailable: start Docker Desktop (or use the desktop app, which falls back to process "
+                          "isolation for skills). Tool, skill and research runs refuse until then.")
         if "engine_link" in fails:
             advice.append("AI Fusion Engine Pro not reachable: missions fall back to the next model provider if configured.")
         if "disk" in fails:

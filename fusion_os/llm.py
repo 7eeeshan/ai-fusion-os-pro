@@ -43,6 +43,15 @@ class EngineLLM:
         return self.link.chat(model, [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
                               max_tokens=max_tokens)
 
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 2000) -> str:
+        model = self.model
+        if not model:
+            models = self.link.models()
+            if not models:
+                raise EngineUnavailable("engine has no models loaded")
+            model = models[0]["id"]
+        return self.link.chat(model, [{"role": "system", "content": system}, *messages], max_tokens=max_tokens)
+
 
 class AnthropicLLM:
     name = "anthropic"
@@ -59,6 +68,15 @@ class AnthropicLLM:
             "x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
             json={"model": self.model, "max_tokens": max_tokens, "system": system,
                   "messages": [{"role": "user", "content": prompt}]})
+        r.raise_for_status()
+        return "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
+
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 2000) -> str:
+        if not self.api_key:
+            raise LLMUnavailable("ANTHROPIC_API_KEY not set")
+        r = self.client.post("https://api.anthropic.com/v1/messages", headers={
+            "x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            json={"model": self.model, "max_tokens": max_tokens, "system": system, "messages": messages})
         r.raise_for_status()
         return "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
 
@@ -86,6 +104,28 @@ class Router:
             except Exception as exc:  # any provider failure -> next provider
                 errors.append(f"{p.name}: {str(exc)[:200]}")
         raise LLMUnavailable("no model provider available: " + "; ".join(errors))
+
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 2000) -> str:
+        """Multi-turn chat. `messages` alternate user/assistant and end with a user turn. Providers without a chat
+        method get the conversation as one transcript."""
+        errors = []
+        for p in self.providers:
+            t0 = time.monotonic()
+            try:
+                if hasattr(p, "chat"):
+                    out = p.chat(system, messages, max_tokens)
+                else:
+                    out = p.complete(system, transcript(messages), max_tokens)
+                self.last = {"provider": p.name, "seconds": time.monotonic() - t0, "fallbacks": errors}
+                return out
+            except Exception as exc:
+                errors.append(f"{p.name}: {str(exc)[:200]}")
+        raise LLMUnavailable("no model provider available: " + "; ".join(errors))
+
+
+def transcript(messages: list[dict]) -> str:
+    lines = [f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}" for m in messages]
+    return "\n\n".join(lines) + "\n\nAssistant:"
 
 
 def extract_json(text: str) -> Any:

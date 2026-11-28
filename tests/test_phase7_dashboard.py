@@ -8,7 +8,7 @@ from fusion_os.api.server import create_app
 from fusion_os.sandbox import DockerSandbox
 from fusion_os.security.controller import SecurityController
 
-HTML = (Path(__file__).parent.parent / "fusion_os" / "api" / "dashboard.html").read_text()
+HTML = (Path(__file__).parent.parent / "fusion_os" / "api" / "dashboard.html").read_text(encoding="utf-8")
 
 
 def test_dashboard_served_with_security_headers(tmp_path):

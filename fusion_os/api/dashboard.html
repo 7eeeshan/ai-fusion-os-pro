@@ -33,15 +33,20 @@ function toast(t){const m=$("msg");m.textContent=typeof t==="string"?t:JSON.stri
 async function api(path,opt={},asAgent=false){const h={"Authorization":"Bearer "+(asAgent?AG:ADM)};if(opt.body&&typeof opt.body!=="string"){opt.body=JSON.stringify(opt.body);h["Content-Type"]="application/json"}
  const r=await fetch(path,{...opt,headers:{...h,...(opt.headers||{})}});const ct=r.headers.get("content-type")||"";const d=ct.includes("json")?await r.json():await r.text();
  if(!r.ok){toast((d&&d.detail)?d.detail:d);throw new Error(r.status)}return d}
-async function login(){ADM=$("tok").value.trim();try{await api("/admin/status")}catch(e){return}
+async function login(tok){ADM=(tok||$("tok").value).trim();try{await api("/admin/status")}catch(e){return}
  const a=await api("/admin/agents",{method:"POST",body:{agent_id:"dashboard",zones:["research","security","standard"]}});AG=a.token;S.setItem("adm",ADM);S.setItem("ag",AG);boot()}
+async function desktopLaunch(){const m=location.hash.match(/^#launch=([A-Za-z0-9_-]+)$/);if(!m)return false;
+ history.replaceState(null,"",location.pathname);
+ const r=await fetch("/desktop/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({launch:m[1]})});
+ if(!r.ok){toast("Desktop sign-in failed; paste the admin token instead.");return false}
+ await login((await r.json()).admin_token);return true}
 const t=x=>x?new Date(x*1000).toLocaleString():"";
 function table(rows,cols,fmt={}){if(!rows||!rows.length)return'<p class="mute">Nothing yet.</p>';
  return"<table><tr>"+cols.map(c=>`<th>${esc(c)}</th>`).join("")+"</tr>"+rows.map(r=>"<tr>"+cols.map(c=>`<td>${fmt[c]?fmt[c](r[c],r):esc(typeof r[c]==="object"?JSON.stringify(r[c]):r[c])}</td>`).join("")+"</tr>").join("")+"</table>"}
 const sev=v=>`<span class="${esc(v)}">${esc(v)}</span>`,okb=v=>v?'<span class="ok">ok</span>':'<span class="bad">fail</span>';
 const V={
  overview:["Overview",async()=>{const [s,h,q]=await Promise.all([api("/admin/status"),api("/admin/health"),api("/admin/queue")]);
-  return`<div class="grid">${[["Emergency stop",s.emergency_stop?'<span class="bad">ACTIVE</span>':'<span class="ok">off</span>'],["Policy",okb(s.policy_ok)+" v"+esc(s.policy_version)],["Audit chain",okb(s.audit.ok)+" "+s.audit.entries+" entries"],["Pending approvals",s.pending_approvals],["Sandbox",okb(s.sandbox.available)],["AI Fusion Engine",s.engine_link.connected?'<span class="ok">connected</span>':'<span class="mute">not connected</span>'],["Queue",esc(JSON.stringify(q.stats.by_status))],["Live nodes",q.nodes.filter(n=>n.alive).length]].map(([k,v])=>`<div class="card kpi"><span>${k}</span><b>${v}</b></div>`).join("")}</div>
+  return`<div class="grid">${[["Emergency stop",s.emergency_stop?'<span class="bad">ACTIVE</span>':'<span class="ok">off</span>'],["Policy",okb(s.policy_ok)+" v"+esc(s.policy_version)],["Audit chain",okb(s.audit.ok)+" "+s.audit.entries+" entries"],["Pending approvals",s.pending_approvals],["Sandbox",s.sandbox.available?okb(true)+" docker":(s.sandbox.skills&&s.sandbox.skills.available?okb(true)+" "+esc(s.sandbox.skills.isolation):okb(false))],["AI Fusion Engine",s.engine_link.connected?'<span class="ok">connected</span>':'<span class="mute">not connected</span>'],["Queue",esc(JSON.stringify(q.stats.by_status))],["Live nodes",q.nodes.filter(n=>n.alive).length]].map(([k,v])=>`<div class="card kpi"><span>${k}</span><b>${v}</b></div>`).join("")}</div>
   <h3>Health advice</h3><div class="card">${h.advice.length?h.advice.map(a=>`<p>• ${esc(a)}</p>`).join(""):'<p class="ok">All checks pass.</p>'}</div>
   <h3>Start a mission</h3><div class="card"><textarea id="goal" placeholder="Describe the goal"></textarea><div class="row"><button onclick="startMission()">Start mission</button></div></div>
   <h3>Missions</h3><div class="card" id="mlist"></div>`},async()=>{const m=await api("/admin/missions");$("mlist").innerHTML=table(m,["id","goal","status","error","updated"],{updated:t,id:v=>`<a href="#" onclick="showMission('${esc(v)}');return false">${esc(v)}</a>`})}],
@@ -107,7 +112,7 @@ const V={
 let cur="overview";
 async function go(k){cur=k;document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.k===k));const [title,render,after]=V[k];
  $("main").innerHTML=`<h2>${title}</h2><p class="mute">Loading…</p>`;try{$("main").innerHTML=`<h2>${title}</h2>`+await render();if(after)await after()}catch(e){$("main").innerHTML+=`<p class="bad">Could not load: ${esc(e.message)}</p>`}}
-function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
+function boot(){$("nav").innerHTML="<h1>AI Fusion OS Pro</h1><a href=\"/app\" style=\"color:var(--acc)\">&larr; Back to chat</a>"+Object.entries(V).map(([k,[n]])=>`<a data-k="${k}" onclick="go('${k}')">${n}</a>`).join("")+`<a onclick="S.clear();location.reload()">Sign out</a>`;go(cur)}
 async function startMission(){const r=await api("/admin/missions",{method:"POST",body:{goal:$("goal").value}});toast("Mission "+r.id+" started");go("overview")}
 async function showMission(id){const m=await api("/admin/missions/"+id);toast({status:m.status,error:m.error,waiting_on:m.waiting_on,final:m.result&&m.result.final,log:(m.log||[]).slice(-8)})}
 async function newEng(){const sp=s=>s.split(",").map(x=>x.trim()).filter(Boolean);const now=Date.now()/1000;
@@ -130,5 +135,5 @@ async function drawGraph(){const g=await api(`/v1/memory/graph?node=${encodeURIC
  const pos={};g.nodes.forEach((x,i)=>{const a=2*Math.PI*i/Math.max(n,1),r=i===0?0:Math.min(W,H)/2.6;pos[x]=[W/2+r*Math.cos(a),H/2+r*Math.sin(a)]});
  svg.innerHTML=g.edges.map(e=>{const [x1,y1]=pos[e.subject],[x2,y2]=pos[e.object];return`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3b4656"/><text x="${(x1+x2)/2}" y="${(y1+y2)/2}" fill="#8b949e">${esc(e.predicate)}</text>`}).join("")+
  g.nodes.map(x=>`<circle cx="${pos[x][0]}" cy="${pos[x][1]}" r="6" fill="#4c8dff"/><text x="${pos[x][0]+9}" y="${pos[x][1]+4}">${esc(x)}</text>`).join("")}
-if(ADM&&AG)boot();
+desktopLaunch().then(ok=>{if(ok)return;if(ADM&&AG)boot();else if(ADM)login(ADM)});
 </script></body></html>
