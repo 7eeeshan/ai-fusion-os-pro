@@ -892,7 +892,7 @@ def create_app(controller: Optional[SecurityController] = None, sandbox: Optiona
         return eng.status()
 
     from .chat_routes import mount as mount_chat
-    app.state.chat_parts = mount_chat(app, admin, ctl, router, skills=skm, web=wb)
+    app.state.chat_parts = mount_chat(app, admin, ctl, router, skills=skm, web=wb, engine=eng)
 
     @app.get("/", include_in_schema=False)
     def root():

@@ -438,3 +438,65 @@ def test_edit_changed_after_preview_is_refused(parts):
     out = b.resume(cid, pending["id"], approve=True)
     assert out[0]["meta"]["status"] == "denied"
     assert (proj / "pkg" / "calc.py").read_text().startswith("def add")
+
+
+FAKE_OPENCODE = r'''#!PYTHON
+import json, os, sys
+task = sys.stdin.read()
+args = sys.argv[1:]
+cfg = json.load(open(os.environ["OPENCODE_CONFIG"]))
+d = args[args.index("--dir") + 1]
+open(os.path.join(d, "pkg", "calc.py"), "w").write("def add(a, b):\n    return a + b\n")
+open(os.path.join(d, "NOTES.md"), "w").write("fixed\n")
+rec = {"task": task, "args": args, "bash": cfg["permission"]["bash"], "token": os.environ.get("AFE_TOKEN"),
+       "provider": "fusion" in cfg.get("provider", {})}
+open(os.path.join(os.path.dirname(os.environ["OPENCODE_CONFIG"]), "seen.json"), "w").write(json.dumps(rec))
+for ev in ({"type": "tool_use", "sessionID": "ses_1", "part": {"tool": "edit", "state": {"status": "completed", "input": {"filePath": d + "/pkg/calc.py"}}}},
+           {"type": "text", "sessionID": "ses_1", "part": {"text": "Fixed add()."}}):
+    print(json.dumps(ev))
+'''
+
+
+class FakeEngine:
+    base_url = "http://127.0.0.1:8765"
+    token = "afe-secret"
+
+    def status(self):
+        return {"connected": True}
+
+    def models(self):
+        return [{"id": "llamacpp/qwen"}]
+
+    def _headers(self):
+        return {}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the fake OpenCode is a shebang script")
+def test_opencode_hand_off_needs_approval_and_reports_changes(parts, monkeypatch):
+    from fusion_os.chat.opencode import OpenCodeLink
+    fake = parts["tmp"] / "opencode"
+    fake.write_text(FAKE_OPENCODE.replace("PYTHON", sys.executable))
+    fake.chmod(0o755)
+    monkeypatch.setenv("FUSION_OS_OPENCODE", str(fake))
+    proj = make_project(parts["tmp"])
+    b, r, cid = coder(parts, [call("opencode_task", task="Make test_calc pass; it's in pkg/calc.py & tests"),
+                              "OpenCode fixed it."], proj)
+    b.opencode = OpenCodeLink(parts["tmp"] / "occfg", engine=FakeEngine())
+    out = b.send(cid, "use opencode to fix the test")
+    pending = out[-1]
+    assert pending["meta"]["tool"] == "opencode_task" and pending["meta"]["status"] == "pending"
+    assert "AI Fusion Engine Pro (llamacpp/qwen)" in pending["meta"]["preview"]
+    assert "commands and web access are blocked" in pending["meta"]["preview"]
+    assert (proj / "pkg" / "calc.py").read_text().endswith("a - b\n")
+    out = b.resume(cid, pending["id"], approve=True)
+    m = out[0]["meta"]
+    assert m["status"] == "done", m["output"]
+    assert "changed  pkg/calc.py" in m["preview"] and "added  NOTES.md" in m["preview"]
+    assert "+    return a + b" in m["preview"] and "Fixed add()." in m["output"]
+    seen = json.loads((parts["tmp"] / "occfg" / "seen.json").read_text())
+    assert seen["task"] == "Make test_calc pass; it's in pkg/calc.py & tests"  # on stdin, not argv
+    assert not any("test_calc" in a for a in seen["args"])
+    assert seen["bash"] == "deny" and seen["token"] == "afe-secret" and seen["provider"]
+    assert ["-m", "fusion/llamacpp/qwen"] == seen["args"][seen["args"].index("-m"):seen["args"].index("-m") + 2]
+    assert parts["store"].get(cid)["settings"]["opencode_session"] == "ses_1"
+    assert out[-1]["content"] == "OpenCode fixed it."

@@ -29,6 +29,18 @@ the sidebar and links back to the chat.
 - In the Code menu you can let one chat apply edits or run code without asking (`files.write.preapproved`,
   `code.run.preapproved`). Choosing another folder turns both off again. Every write and run is in the audit log.
 
+## OpenCode
+The chat can hand larger coding tasks to [OpenCode](https://opencode.ai) (open source, MIT), when it is installed on
+this PC (`npm install -g opencode-ai`, or set `FUSION_OS_OPENCODE` in `desktop.env` to the path of `opencode.exe`).
+- Each hand-off (`opencode_task`) shows the task, the folder and the model, and waits for **Approve** (`code.delegate`).
+- OpenCode works in the chat's project folder with a config this app writes: file edits allowed, commands, web
+  fetches and folders outside the project denied. **Let OpenCode run commands** in the Code menu allows commands for
+  that chat; they run on your PC outside the sandbox.
+- When AI Fusion Engine Pro is running, OpenCode uses it as its model (local, no cost). Otherwise it uses the model
+  set up in OpenCode itself, and the approval card says so.
+- Afterwards the chat shows OpenCode's report, the tools it used and a diff of every changed file; the list of
+  changed files goes to the audit log. Later hand-offs in the same chat continue the same OpenCode session.
+
 ## Skills
 Two kinds:
 - **Instruction skills** use Claude's format: a folder with `SKILL.md` (front matter `name` and `description`) and any

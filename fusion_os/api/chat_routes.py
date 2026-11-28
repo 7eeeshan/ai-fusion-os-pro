@@ -13,6 +13,7 @@ from .. import paths
 from ..chat import (Assistant, ChatStore, ConnectorManager, InstructionSkills, claude_skill_folders, preview,
                     read_claude_servers)
 from ..chat.code import CodeError, CodeTools, check_project
+from ..chat.opencode import OpenCodeLink
 from ..sandbox import AutoSandbox
 
 
@@ -27,6 +28,7 @@ class ChatPatchBody(BaseModel):
     project: Optional[str] = Field(None, max_length=1000)
     auto_edit: Optional[bool] = None
     auto_run: Optional[bool] = None
+    opencode_commands: Optional[bool] = None
 
 
 class FileBody(BaseModel):
@@ -75,7 +77,7 @@ class SkillAddBody(BaseModel):
     zip_b64: Optional[str] = Field(None, max_length=30_000_000)
 
 
-def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=None) -> dict[str, Any]:
+def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=None, engine=None) -> dict[str, Any]:
     store = ChatStore(paths.home() / "chats.db")
     conns = ConnectorManager(paths.home() / "connectors.json")
     instr = InstructionSkills(paths.home() / "instruction_skills")
@@ -89,8 +91,9 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
     # because the person approves each run (or turned on auto-approve for that chat's project).
     sbx = code_sandbox or AutoSandbox(allowed_images=("python:3.12-slim",), workroot=runs, allow_process=True)
     code = CodeTools(sbx, runs)
+    oc = OpenCodeLink(home / "opencode", engine=engine)
     bot = Assistant(ctl, agent, store, router, conns, instr, skills=skills, web=web, code=code, data_home=home,
-                    workspace=workspace)
+                    workspace=workspace, opencode=oc)
     app.state.chat = bot
 
     def _chat(cid: str) -> dict:
@@ -136,8 +139,9 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
                     raise HTTPException(400, str(exc))
             if folder != (settings.get("project") or ""):
                 # auto-approve is given for one folder; a new folder starts with approvals on again
-                settings = {**settings, "project": folder or None, "auto_edit": False, "auto_run": False}
-        for k in ("auto_edit", "auto_run"):
+                settings = {**settings, "project": folder or None, "auto_edit": False, "auto_run": False,
+                            "opencode_commands": False, "opencode_session": None}
+        for k in ("auto_edit", "auto_run", "opencode_commands"):
             v = getattr(body, k)
             if v is not None:
                 settings = {**settings, k: v}
@@ -177,6 +181,10 @@ def mount(app: FastAPI, admin, ctl, router, skills=None, web=None, code_sandbox=
     @app.get("/admin/chat/tools", dependencies=[Depends(admin)])
     def chat_tools(chat: str = ""):
         return bot.tools(chat or None)
+
+    @app.get("/admin/chat/opencode", dependencies=[Depends(admin)])
+    def opencode_status():
+        return {**oc.status(), "engine_model": oc.engine_model()}
 
     @app.get("/admin/chat/model", dependencies=[Depends(admin)])
     def chat_model():

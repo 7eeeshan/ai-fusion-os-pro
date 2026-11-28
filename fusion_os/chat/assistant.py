@@ -89,11 +89,12 @@ def parse_tool_call(text: str) -> Optional[tuple[str, dict, str]]:
 class Assistant:
     def __init__(self, ctl, agent: dict, store: ChatStore, router, connectors: ConnectorManager,
                  instructions: InstructionSkills, skills=None, web=None, max_tokens: int = 3000,
-                 code: Optional[CodeTools] = None, data_home=None, workspace=None):
+                 code: Optional[CodeTools] = None, data_home=None, workspace=None, opencode=None):
         self.ctl, self.agent, self.store, self.router = ctl, agent, store, router
         self.connectors, self.instructions, self.skills, self.web = connectors, instructions, skills, web
         self.max_tokens = max_tokens
         self.code, self.data_home, self.workspace = code, data_home, workspace
+        self.opencode = opencode
 
     # ---------- project folder ----------
     def project(self, chat_id: Optional[str]) -> Optional[dict]:
@@ -107,7 +108,8 @@ class Assistant:
         except CodeError as exc:
             return {"root": None, "folder": folder, "error": str(exc), "auto_edit": False, "auto_run": False}
         return {"root": root, "folder": str(root), "error": None,
-                "auto_edit": bool(s.get("auto_edit")), "auto_run": bool(s.get("auto_run"))}
+                "auto_edit": bool(s.get("auto_edit")), "auto_run": bool(s.get("auto_run")),
+                "opencode_commands": bool(s.get("opencode_commands")), "opencode_session": s.get("opencode_session")}
 
     # ---------- tools ----------
     def tools(self, chat_id: Optional[str] = None) -> list[dict]:
@@ -135,6 +137,12 @@ class Assistant:
                  "hint": '{"code"?: string, "script"?: string, "args"?: array, "timeout_s"?: number}',
                  "permission": rn, "kind": "code"},
             ]
+            if self.opencode is not None and self.opencode.binary():
+                t.append({"id": "opencode_task", "description": "Hand a larger coding task to OpenCode, the open source "
+                          "coding agent on this PC. It works in the project folder on its own (reads, edits, and runs "
+                          "commands only if the person allowed that) and reports back with every changed file. Give "
+                          "a complete, self-contained task description. The person approves each hand-off.",
+                          "hint": '{"task": string}', "permission": "ask", "kind": "code"})
         if self.web is not None:
             t.append({"id": "web_fetch", "description": "Read a public web page and return its text.",
                       "hint": '{"url": string}', "permission": "allow", "kind": "builtin"})
@@ -300,6 +308,8 @@ class Assistant:
                                   {"project": str(root), "path": plan["path"], "sha256": plan["sha256"]})
             return {"status": "done", "output": f"wrote {plan['path']}\n{plan['diff'][:20000]}", "summary": summary,
                     "preview": plan["diff"]}
+        if tid == "opencode_task":
+            return self._opencode(root, proj, args, approval_id, chat_id)
         if tid == "run_code":
             cmd = ct.command(str(args.get("code") or ""), str(args.get("script") or ""), args.get("args") or [])
             auto = t["permission"] == "allow" and approval_id is None
@@ -321,6 +331,46 @@ class Assistant:
                     "output": wrap(text, "code-run", "tool").render(), "preview": shown,
                     "summary": f"exit {r['exit_code']} in {r['duration_s']} s"}
         return {"status": "error", "output": f"unknown coding tool {tid}"}
+
+    def _opencode(self, root, proj: dict, args: dict, approval_id: Optional[str], chat_id: Optional[str]) -> dict:
+        from .opencode import describe_changes
+        task = str(args.get("task", "")).strip()
+        if not task:
+            return {"status": "error", "output": "give the task to hand to OpenCode"}
+        if len(task) > 20000:
+            return {"status": "error", "output": "task is too long; keep it under 20,000 characters"}
+        model = self.opencode.engine_model()
+        cmds = proj["opencode_commands"]
+        v = self._gate("code.delegate", "standard", str(root),
+                       {"project": str(root), "task_sha256": hashlib.sha256(task.encode()).hexdigest(),
+                        "model": model or "opencode-default", "commands": cmds}, approval_id)
+        who = f"AI Fusion Engine Pro ({model})" if model else "the model set up in OpenCode itself"
+        rules = ("It can edit files in this folder and run commands." if cmds else
+                 "It can edit files in this folder; commands and web access are blocked.")
+        if v.effect == "pending_approval":
+            return {"status": "pending", "approval_id": v.approval_id, "output": "",
+                    "preview": f"Task for OpenCode in {root}\nModel: {who}\n{rules}\n\n{task}",
+                    "summary": f"in {root.name}, using {who}"}
+        if not v.allowed:
+            return {"status": "denied", "output": f"not handed over: {v.reason}"}
+        r = self.opencode.run(root, task, model, cmds, session=proj.get("opencode_session"))
+        if chat_id and r.get("session"):
+            st = (self.store.get(chat_id) or {}).get("settings") or {}
+            self.store.update(chat_id, settings={**st, "opencode_session": r["session"]})
+        self.ctl.audit.append(self.agent["agent_id"], "code.delegate.result",
+                              {"project": str(root), "exit_code": r["exit_code"], "timed_out": r["timed_out"],
+                               "changed": [c["path"] for c in r["changes"]], "model": model or "opencode-default"})
+        changes = describe_changes(r["changes"])
+        tools = "\n".join(f"- {x['tool']} {x['target']} ({x['status']})" for x in r["tools"][:60])
+        text = (f"OpenCode finished with exit code {r['exit_code']}{' (timed out)' if r['timed_out'] else ''} "
+                f"in {r['seconds']} s.\n\nOpenCode's report:\n{r['text'] or '(no text)'}\n\nTools it used:\n"
+                f"{tools or '(none)'}\n\nFiles changed:\n{changes}")
+        if r["exit_code"] not in (0, None) and r["stderr"]:
+            text += "\n\nErrors:\n" + r["stderr"][-2000:]
+        n = len(r["changes"])
+        return {"status": "done" if r["exit_code"] == 0 and not r["timed_out"] else "error",
+                "output": wrap(text[:60000], "opencode", "tool").render(),
+                "preview": changes, "summary": f"{n} file{'s' if n != 1 else ''} changed in {r['seconds']} s"}
 
     # ---------- self-build ----------
     def _build(self, tid: str, args: dict, approval_id: Optional[str]) -> dict:

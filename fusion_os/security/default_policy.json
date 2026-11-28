@@ -166,9 +166,10 @@
     },
     {
       "id": "code-run",
-      "description": "Running model-written code from the chat on a copy of the project folder, in the sandbox without network: the person approves each run.",
+      "description": "Running model-written code from the chat on a copy of the project folder (sandbox, no network), and handing a coding task to OpenCode in the project folder: the person approves each one.",
       "actions": [
-        "code.run"
+        "code.run",
+        "code.delegate"
       ],
       "zones": [
         "standard"
